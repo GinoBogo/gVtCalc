@@ -1,3 +1,5 @@
+.gitignore
+
 # Prerequisites
 *.d
 
@@ -53,3 +55,10 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# VS Code directories and files
+.cache/
+.vscode/
+build/
+
+compile_commands.json
