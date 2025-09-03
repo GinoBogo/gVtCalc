@@ -72,6 +72,7 @@ static bool _apply_unary_op(calc_context_t *ctx, double num) {
             } break;
 
             default: {
+                // Not a unary operator
             }
         }
     }
@@ -160,6 +161,7 @@ static bool _apply_unary_func(calc_context_t *ctx, double num) {
             } break;
 
             default: {
+                // Not a unary function
             }
         }
     }
