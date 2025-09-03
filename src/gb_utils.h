@@ -9,8 +9,8 @@
     @author
         Gino Francesco Bogo (ᛊᛟᚱᚱᛖ ᛗᛖᚨ ᛁᛊᛏᚨᛗᛁ ᚨcᚢᚱᛉᚢ)
 
-    @company
-        Airbus Italia S.p.A.
+    @license
+        MIT
  */
 /* ************************************************************************** */
 
