@@ -47,12 +47,10 @@
 #define move_cur_right() fputs("\x1B[C", stdout) // ESC[C (move cursor right)
 // clang-format on
 
-#define MAX_ARG_LEN (128)
-#define MAX_ARG_NUM (8)
+#define MAX_ARG_LEN (24)
+#define MAX_ARG_NUM (64)
 #define MAX_CMD_LEN (32 + (MAX_ARG_NUM * MAX_ARG_LEN))
 #define HISTORY_LEN (20)
-
-#define DEFAULT_DELAY "200"
 
 // *****************************************************************************
 // *****************************************************************************
