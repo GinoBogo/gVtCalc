@@ -427,7 +427,7 @@ bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len) {
         rvalue = !(*err);
 
         if (rvalue) {
-            rvalue = snprintf(dst_dec, dst_len, "%ld", num) > 0;
+            rvalue = snprintf(dst_dec, dst_len, "%zd", num) > 0;
         }
     }
 
@@ -456,7 +456,7 @@ bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len) {
         rvalue = !(*err);
 
         if (rvalue) {
-            rvalue = snprintf(dst_hex, dst_len, "%lX", num) > 0;
+            rvalue = snprintf(dst_hex, dst_len, "%zX", num) > 0;
         }
     }
 
@@ -541,7 +541,7 @@ bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len) {
         rvalue = !(*err);
 
         if (rvalue) {
-            rvalue = snprintf(dst_hex, dst_len, "%lX", num) > 0;
+            rvalue = snprintf(dst_hex, dst_len, "%zX", num) > 0;
         }
 
         if (rvalue) {
@@ -615,7 +615,7 @@ bool gb_hex2dec(const char *src_hex, char *dst_dec, size_t dst_len) {
         rvalue = !(*err);
 
         if (rvalue) {
-            rvalue = snprintf(dst_dec, dst_len, "%ld", num) > 0;
+            rvalue = snprintf(dst_dec, dst_len, "%zd", num) > 0;
         }
     }
 
