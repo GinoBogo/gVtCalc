@@ -499,6 +499,34 @@ void gb_zeros(void *dst, size_t len);
 char *gb_strchr(const char *str, int c);
 
 /**
+ * @brief Copies a string from source to destination.
+ *
+ * This function copies the string pointed to by `src` (including the null
+ * terminator) to the memory area pointed to by `dst`. The destination buffer
+ * must be large enough to hold the copied string.
+ *
+ * @param dst Pointer to the destination buffer.
+ * @param src Pointer to the source string.
+ * @return Pointer to the destination buffer.
+ */
+char *gb_strcpy(char *dst, const char *src);
+
+/**
+ * @brief Copies up to `n` characters from the source string to the destination
+ * buffer.
+ *
+ * This function copies up to `n` characters from the string pointed to by `src`
+ * (including the null terminator) to the memory area pointed to by `dst`. The
+ * destination buffer must be large enough to hold the copied string.
+ *
+ * @param dst Pointer to the destination buffer.
+ * @param src Pointer to the source string.
+ * @param n Maximum number of characters to copy.
+ * @return Pointer to the destination buffer.
+ */
+char *gb_strncpy(char *dst, const char *src, size_t n);
+
+/**
  * @brief Compares two strings for equality.
  *
  * This function compares the two null-terminated strings `str1` and `str2`. It

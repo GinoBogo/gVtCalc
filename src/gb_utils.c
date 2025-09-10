@@ -248,6 +248,119 @@ char *gb_strchr(const char *str, int c) {
 }
 
 /**
+ * @brief Copies a string from source to destination.
+ *
+ * This function copies the string pointed to by `src` (including the null
+ * terminator) to the memory area pointed to by `dst`. The destination buffer
+ * must be large enough to hold the copied string.
+ *
+ * @param dst Pointer to the destination buffer.
+ * @param src Pointer to the source string.
+ * @return Pointer to the destination buffer.
+ */
+char *gb_strcpy(char *dst, const char *src) {
+    if (!dst || !src) {
+        return dst;
+    }
+
+    char *ptr = dst;
+
+    while ((*src) && (((uintptr_t)ptr % sizeof(uint32_t)) || //
+                      ((uintptr_t)src % sizeof(uint32_t)))) {
+        *ptr = *src;
+
+        ++ptr;
+        ++src;
+    }
+
+    void *vp1 = (void *)ptr;
+    void *vp2 = (void *)src;
+
+    uint32_t *wp1 = (uint32_t *)vp1;
+    uint32_t *wp2 = (uint32_t *)vp2;
+
+    while (!GB_HAS_ZERO(*wp1) && !GB_HAS_ZERO(*wp2)) {
+        *wp1 = *wp2;
+
+        ++wp1;
+        ++wp2;
+    }
+
+    ptr = (char *)wp1;
+    src = (const char *)wp2;
+
+    while (*src) {
+        *ptr = *src;
+
+        ++ptr;
+        ++src;
+    }
+
+    *ptr = '\0';
+
+    return dst;
+}
+
+/**
+ * @brief Copies up to `n` characters from the source string to the destination
+ * buffer.
+ *
+ * This function copies up to `n` characters from the string pointed to by `src`
+ * (including the null terminator) to the memory area pointed to by `dst`. The
+ * destination buffer must be large enough to hold the copied string.
+ *
+ * @param dst Pointer to the destination buffer.
+ * @param src Pointer to the source string.
+ * @param n Maximum number of characters to copy.
+ * @return Pointer to the destination buffer.
+ */
+char *gb_strncpy(char *dst, const char *src, size_t n) {
+    if (!dst || !src || !n) {
+        return dst;
+    }
+
+    char *ptr = dst;
+
+    while ((n > 0) && (*src) &&                    //
+           (((uintptr_t)ptr % sizeof(uint32_t)) || //
+            ((uintptr_t)src % sizeof(uint32_t)))) {
+        *ptr = *src;
+
+        ++ptr;
+        ++src;
+        --n;
+    }
+
+    void *vp1 = (void *)ptr;
+    void *vp2 = (void *)src;
+
+    uint32_t *wp1 = (uint32_t *)vp1;
+    uint32_t *wp2 = (uint32_t *)vp2;
+
+    while ((n >= sizeof(uint32_t)) && !GB_HAS_ZERO(*wp1) && !GB_HAS_ZERO(*wp2)) {
+        *wp1 = *wp2;
+
+        ++wp1;
+        ++wp2;
+        n -= sizeof(uint32_t);
+    }
+
+    ptr = (char *)wp1;
+    src = (const char *)wp2;
+
+    while (*src) {
+        *ptr = *src;
+
+        ++ptr;
+        ++src;
+    }
+
+    *ptr = '\0';
+
+    return dst;
+}
+
+/**
  * @brief Compares two strings for equality.
  *
  * This function compares two null-terminated strings `str1` and `str2` for
