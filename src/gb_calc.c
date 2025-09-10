@@ -442,6 +442,7 @@ static bool _process_number(calc_context_t *ctx) {
 
 static bool _process_constant(calc_context_t *ctx) {
     const char *cp = &ctx->expr[ctx->i];
+    const char  ch = *cp;
 
     if (gb_strncmp(cp, "pi", 2) == 0) {
         if (!_apply_unary_op(ctx, M_PI)) {
@@ -449,6 +450,15 @@ static bool _process_constant(calc_context_t *ctx) {
         }
 
         ctx->i += 2;
+        return true;
+    }
+
+    if ((ch == 'e') && (gb_strncmp(cp, "exp", 3) != 0)) {
+        if (!_apply_unary_op(ctx, M_E)) {
+            ctx->num_lifo[++ctx->num_top] = M_E;
+        }
+
+        ctx->i += 1;
         return true;
     }
 
