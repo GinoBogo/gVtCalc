@@ -290,11 +290,17 @@ static int vt_split_string(char       *str, //
 
 vt_cmd_entry_t vt_cmd_entry[] = {
     {   "calc", 4, 1,    __math_calc},
+    {    "b2d", 3, 1, __math_bin2dec},
     {"bin2dec", 7, 1, __math_bin2dec},
+    {    "b2h", 3, 1, __math_bin2hex},
     {"bin2hex", 7, 1, __math_bin2hex},
+    {    "d2b", 3, 1, __math_dec2bin},
     {"dec2bin", 7, 1, __math_dec2bin},
+    {    "d2h", 3, 1, __math_dec2hex},
     {"dec2hex", 7, 1, __math_dec2hex},
+    {    "h2b", 3, 1, __math_hex2bin},
     {"hex2bin", 7, 1, __math_hex2bin},
+    {    "h2d", 3, 1, __math_hex2dec},
     {"hex2dec", 7, 1, __math_hex2dec},
 };
 
@@ -709,12 +715,12 @@ void VT_PrintMath(void) {
     printf("\r\n");
     printf("Math:\r\n");
     printf("  calc <expr>   - calculate the expression\r\n");
-    printf("  bin2dec <num> - convert binary to decimal\r\n");
-    printf("  bin2hex <num> - convert binary to hexadecimal\r\n");
-    printf("  dec2bin <num> - convert decimal to binary\r\n");
-    printf("  dec2hex <num> - convert decimal to hexadecimal\r\n");
-    printf("  hex2bin <num> - convert hexadecimal to binary\r\n");
-    printf("  hex2dec <num> - convert hexadecimal to decimal\r\n");
+    printf("  bin2dec <num> - convert binary to decimal. Alias: b2d\r\n");
+    printf("  bin2hex <num> - convert binary to hexadecimal. Alias: b2h\r\n");
+    printf("  dec2bin <num> - convert decimal to binary. Alias: d2b\r\n");
+    printf("  dec2hex <num> - convert decimal to hexadecimal. Alias: d2h\r\n");
+    printf("  hex2bin <num> - convert hexadecimal to binary. Alias: h2b\r\n");
+    printf("  hex2dec <num> - convert hexadecimal to decimal. Alias: h2d\r\n");
     // clang-format on
 }
 
