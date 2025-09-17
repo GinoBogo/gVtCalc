@@ -381,19 +381,26 @@
 // MEMORY/BUFFER macros
 #define GB_ARRAY_32(x) ((uint32_t *)&(x))
 
+// WARNING: The following macros do not check for NULL pointers and assume that
+//          the destination buffer is large enough to hold the copied data. Use
+//          with caution and for short buffers!
+
 #define GB_COPY_08(d, s, n)                                                       \
     {                                                                             \
-        for (size_t i = 0; i < n; ++i) ((uint8_t *)(d))[i] = ((uint8_t *)(s))[i]; \
+        const size_t N = (size_t)(n);                                             \
+        for (size_t i = 0; i < N; ++i) ((uint8_t *)(d))[i] = ((uint8_t *)(s))[i]; \
     }
 
 #define GB_COPY_16(d, s, n)                                                         \
     {                                                                               \
-        for (size_t i = 0; i < n; ++i) ((uint16_t *)(d))[i] = ((uint16_t *)(s))[i]; \
+        const size_t N = (size_t)(n);                                               \
+        for (size_t i = 0; i < N; ++i) ((uint16_t *)(d))[i] = ((uint16_t *)(s))[i]; \
     }
 
 #define GB_COPY_32(d, s, n)                                                         \
     {                                                                               \
-        for (size_t i = 0; i < n; ++i) ((uint32_t *)(d))[i] = ((uint32_t *)(s))[i]; \
+        const size_t N = (size_t)(n);                                               \
+        for (size_t i = 0; i < N; ++i) ((uint32_t *)(d))[i] = ((uint32_t *)(s))[i]; \
     }
 
 #define GB_SET_08(x, s)                                                   \
