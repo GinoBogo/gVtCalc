@@ -334,29 +334,30 @@ static bool vt_decode_word(int argc) {
         return false;
     }
 
-    const char *word = vt_arg[0];
+    const char *cp = vt_arg[0];
+    const char  ch = cp[0];
 
-    if (!gb_strcmp(word, "about")) {
+    if ((ch == 'a') && !gb_strcmp(cp, "about")) {
         VT_PrintAbout();
         return true;
     }
 
-    if (!gb_strcmp(word, "clear")) {
+    if ((ch == 'c') && !gb_strcmp(cp, "clear")) {
         printf("\033c");
         return true;
     }
 
-    if (!gb_strcmp(word, "exit")) {
+    if ((ch == 'e') && !gb_strcmp(cp, "exit")) {
         VT_Exit();
         return true;
     }
 
-    if (!gb_strcmp(word, "help")) {
+    if ((ch == 'h') && !gb_strcmp(cp, "help")) {
         VT_PrintHelp();
         return true;
     }
 
-    if (!gb_strcmp(word, "math")) {
+    if ((ch == 'm') && !gb_strcmp(cp, "math")) {
         VT_PrintMath();
         return true;
     }
