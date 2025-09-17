@@ -32,7 +32,7 @@ int main(void) {
     VT_KeystrokeStop();
     VT_RestoreBuffering();
 
-    fprintf(stdout, "\r\n... done!");
+    fprintf(stdout, "\r\n... done!\r\n");
     return 0;
 }
 
