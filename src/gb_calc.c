@@ -60,7 +60,7 @@ static bool _apply_unary_op(calc_context_t *ctx, double num) {
             } break;
 
             case '!': {
-                ctx->num_lifo[++ctx->num_top] = !num;
+                ctx->num_lifo[++ctx->num_top] = !(int)num;
                 ctx->op__top--;
                 result = true;
             } break;
@@ -240,7 +240,7 @@ static bool _apply_operator(calc_context_t *ctx) {
     }
 
     double a  = ctx->num_lifo[ctx->num_top--];
-    char   op = ctx->op__lifo[ctx->op__top--];
+    char   op = ctx->op__lifo[ctx->op__top--]; // NOSONAR (negative offset)
 
     ctx->num_lifo[++ctx->num_top] = _apply_binary_op(a, b, op);
 
@@ -298,7 +298,7 @@ static bool _process_binary(calc_context_t *ctx) {
             break; // Current operator has higher precedence
         }
 
-        double b  = ctx->num_lifo[ctx->num_top--];
+        double b  = ctx->num_lifo[ctx->num_top--]; // NOSONAR (negative offset)
         double a  = ctx->num_lifo[ctx->num_top--];
         char   op = ctx->op__lifo[ctx->op__top--];
 
@@ -328,7 +328,7 @@ static bool _process_close_paren(calc_context_t *ctx) {
     if ((ctx->op__top >= 0) && (ctx->op__lifo[ctx->op__top] == '(')) {
         ctx->op__top--; // Pop the '('
 
-        double num = ctx->num_lifo[ctx->num_top--];
+        double num = ctx->num_lifo[ctx->num_top--]; // NOSONAR (negative offset)
 
         if (!_apply_unary_op(ctx, num) && !_apply_unary_func(ctx, num)) {
             ctx->num_top++;
@@ -540,12 +540,15 @@ static bool _sanitize_expr(const char *src, char *dst, size_t dst_len) {
 /**
  * @brief Evaluates a mathematical expression.
  *
- * This function evaluates a mathematical expression represented as a string
- * `expr`. It supports basic arithmetic operations and returns the result as a
- * double.
+ * This function evaluates a mathematical expression represented as a string. It
+ * supports arithmetic operators, parentheses, and a set of mathematical
+ * functions.
  *
- * @param expr Pointer to the expression string.
- * @return The result of the evaluated expression.
+ * @param[in] expr A null-terminated string containing the mathematical
+ *                 expression to be evaluated.
+ *
+ * @return The result of the expression as a double. In case of an error, it
+ *         returns INFINITY and prints an error message to stderr.
  */
 double gb_calc(const char *expr) {
     char dst[256];
@@ -562,7 +565,7 @@ double gb_calc(const char *expr) {
     };
 
     char ch;
-    while ((ch = ctx.expr[ctx.i]) != '\0') {
+    while ((ch = ctx.expr[ctx.i]) != '\0') { // NOSONAR (never read)
         if (_process_unary(&ctx)) {
             continue;
         }
