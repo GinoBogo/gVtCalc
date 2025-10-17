@@ -463,11 +463,13 @@
  * the memory area pointed to by `dst`. It uses Duff's device to optimize the
  * copying of memory.
  *
- * @param dst Pointer to the destination memory area.
- * @param src Pointer to the source memory area.
- * @param len Number of bytes to copy.
+ * @param[out] dst Pointer to the destination memory area.
+ * @param[in]  src Pointer to the source memory area.
+ * @param[in]  len Number of bytes to copy.
+ *
+ * @return A pointer to the destination memory area `dst`.
  */
-void gb_memcpy(void *dst, void *src, size_t len);
+void *gb_memcpy(void *dst, const void *src, size_t len);
 
 /**
  * @brief Sets a block of memory to a specified value.
@@ -476,11 +478,15 @@ void gb_memcpy(void *dst, void *src, size_t len);
  * `dst` to the specified value `val`. It uses Duff's device to optimize the
  * setting of memory.
  *
- * @param dst Pointer to the memory area to be set.
- * @param val The value to be set. Only the lower 8 bits of `val` are used.
- * @param len Number of bytes to be set to the value.
+ * @param[out] dst Pointer to the memory area to be set.
+ * @param[in]  val The value to be set. The value is passed as an int, but the
+ * function fills the memory block using the unsigned char conversion of this
+ * value.
+ * @param[in]  len Number of bytes to be set to the value.
+ *
+ * @return A pointer to the memory area `dst`.
  */
-void gb_memset(void *dst, char val, size_t len);
+void *gb_memset(void *dst, int val, size_t len);
 
 /**
  * @brief Sets a block of memory to zero.
@@ -488,22 +494,23 @@ void gb_memset(void *dst, char val, size_t len);
  * This function sets the memory block pointed to by `dst` to zero, for a total
  * of `len` bytes. It uses a loop unrolling technique to optimize the process.
  *
- * @param dst Pointer to the memory block to be zeroed.
- * @param len Number of bytes to set to zero.
+ * @param[out] dst Pointer to the memory block to be zeroed.
+ * @param[in]  len Number of bytes to set to zero.
  */
-void gb_zeros(void *dst, size_t len);
+void gb_bzero(void *dst, size_t len);
 
 /**
  * @brief Finds the first occurrence of a character in a string.
  *
  * This function searches for the first occurrence of the character `c` in the
- * string `str`. If found, it returns a pointer to that character in the string.
- * If not found, it returns NULL.
+ * string `str`. If `c` is the null character '\0', it returns a pointer to the
+ * terminating null character.
  *
- * @param str Pointer to the string.
- * @param c The character to search for.
- * @return Pointer to the first occurrence of `c` in `str`, or NULL if not
- * found.
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] c   The character to locate (passed as an int).
+ *
+ * @return A pointer to the first occurrence of `c` in `str`, or `NULL` if the
+ * character is not found.
  */
 char *gb_strchr(const char *str, int c);
 
@@ -511,64 +518,74 @@ char *gb_strchr(const char *str, int c);
  * @brief Copies a string from source to destination.
  *
  * This function copies the string pointed to by `src` (including the null
- * terminator) to the memory area pointed to by `dst`. The destination buffer
- * must be large enough to hold the copied string.
+ * terminator) to the memory area pointed to by `dst`.
  *
- * @param dst Pointer to the destination buffer.
- * @param src Pointer to the source string.
- * @return Pointer to the destination buffer.
+ * @warning This function does not perform bounds checking. If the destination
+ * buffer is not large enough to hold the source string, a buffer overflow will
+ * occur, leading to undefined behavior and potential security vulnerabilities.
+ * Use with extreme caution.
+ *
+ * @param[out] dst Pointer to the destination buffer.
+ * @param[in]  src Pointer to the source string.
+ *
+ * @return A pointer to the destination buffer.
  */
 char *gb_strcpy(char *dst, const char *src);
 
 /**
- * @brief Copies up to `n` characters from the source string to the destination
+ * @brief Copies up to `n` characters from a source string to a destination
  * buffer.
  *
  * This function copies up to `n` characters from the string pointed to by `src`
- * (including the null terminator) to the memory area pointed to by `dst`. The
- * destination buffer must be large enough to hold the copied string.
+ * to the memory area pointed to by `dst`.
  *
- * @param dst Pointer to the destination buffer.
- * @param src Pointer to the source string.
- * @param n Maximum number of characters to copy.
- * @return Pointer to the destination buffer.
+ * Unlike the standard `strncpy`, this implementation **always** ensures the
+ * destination string is null-terminated, providing a safer alternative.
+ *
+ * @param[out] dst Pointer to the destination buffer.
+ * @param[in]  src Pointer to the source string.
+ * @param[in]  n   The maximum number of characters to copy from `src`.
+ *
+ * @return A pointer to the destination buffer.
  */
 char *gb_strncpy(char *dst, const char *src, size_t n);
 
 /**
- * @brief Compares two strings for equality.
+ * @brief Compares two strings lexicographically.
  *
- * This function compares the two null-terminated strings `str1` and `str2`. It
- * returns 0 if the strings are equal, a negative value if `str1` is less than
- * `str2`, and a positive value if `str1` is greater than `str2`.
+ * This function compares the two null-terminated strings `str1` and `str2`.
  *
- * @param str1 Pointer to the first string.
- * @param str2 Pointer to the second string.
- * @return 0 if equal, negative if `str1` < `str2`, positive if `str1` > `str2`.
+ * @param[in] str1 Pointer to the first string.
+ * @param[in] str2 Pointer to the second string.
+ *
+ * @return An integer less than, equal to, or greater than zero if `str1` is
+ * found, respectively, to be less than, to match, or be greater than `str2`.
  */
 int gb_strcmp(const char *str1, const char *str2);
 
 /**
- * @brief Compares up to `n` characters of two strings.
+ * @brief Compares up to `n` characters of two strings lexicographically.
  *
  * This function compares up to `n` characters of the two null-terminated
- * strings `str1` and `str2`. It returns 0 if the compared parts of the strings
- * are equal, a negative value if `str1` is less than `str2`, and a positive
- * value if `str1` is greater than `str2`.
+ * strings `str1` and `str2`.
  *
- * @param str1 Pointer to the first string.
- * @param str2 Pointer to the second string.
- * @param n Maximum number of characters to compare.
- * @return 0 if equal, negative if `str1` < `str2`, positive if `str1` > `str2`.
+ * @param[in] str1 Pointer to the first string.
+ * @param[in] str2 Pointer to the second string.
+ * @param[in] n    The maximum number of characters to compare.
+ *
+ * @return An integer less than, equal to, or greater than zero if the first `n`
+ * bytes of `str1` is found, respectively, to be less than, to match, or be
+ * greater than the first `n` bytes of `str2`.
  */
 int gb_strncmp(const char *str1, const char *str2, size_t n);
 
 /**
- * @brief Returns the length of a string.
+ * @brief Calculates the length of a string.
  *
- * This function calculates the length of a null-terminated string `str`.
+ * This function calculates the length of the null-terminated string `str`.
  *
- * @param str Pointer to the string.
+ * @param[in] str Pointer to the string.
+ *
  * @return The length of the string, excluding the null terminator.
  */
 size_t gb_strlen(const char *str);
@@ -577,13 +594,13 @@ size_t gb_strlen(const char *str);
  * @brief Converts a binary string to a decimal string.
  *
  * This function converts a binary number represented as a string `src_bin` into
- * a decimal string `dst_dec`. The output is padded with leading zeros to ensure
- * it is a multiple of 4 characters.
+ * a decimal string `dst_dec`.
  *
- * @param src_bin Pointer to the source binary string.
- * @param dst_dec Pointer to the destination decimal string.
- * @param dst_len Length of the destination buffer.
- * @return true if the conversion was successful, false otherwise.
+ * @param[in]  src_bin Pointer to the source binary string.
+ * @param[out] dst_dec Pointer to the destination decimal string.
+ * @param[in]  dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len);
 
@@ -591,13 +608,13 @@ bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len);
  * @brief Converts a binary string to a hexadecimal string.
  *
  * This function converts a binary number represented as a string `src_bin` into
- * a hexadecimal string `dst_hex`. The output is padded with leading zeros to
- * ensure it is a multiple of 4 characters.
+ * a hexadecimal string `dst_hex`.
  *
- * @param src_bin Pointer to the source binary string.
- * @param dst_hex Pointer to the destination hexadecimal string.
- * @param dst_len Length of the destination buffer.
- * @return true if the conversion was successful, false otherwise.
+ * @param[in]  src_bin Pointer to the source binary string.
+ * @param[out] dst_hex Pointer to the destination hexadecimal string.
+ * @param[in]  dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len);
 
@@ -608,10 +625,11 @@ bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len);
  * into a binary string `dst_bin`. The output is padded with leading zeros to
  * ensure it is a multiple of 8 characters.
  *
- * @param src_dec Pointer to the source decimal string.
- * @param dst_bin Pointer to the destination binary string.
- * @param dst_len Length of the destination buffer.
- * @return true if the conversion was successful, false otherwise.
+ * @param[in]  src_dec Pointer to the source decimal string.
+ * @param[out] dst_bin Pointer to the destination binary string.
+ * @param[in]  dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len);
 
@@ -622,10 +640,11 @@ bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len);
  * into a hexadecimal string `dst_hex`. The output is padded with leading zeros
  * to ensure it is a multiple of 4 characters.
  *
- * @param src_dec Pointer to the source decimal string.
- * @param dst_hex Pointer to the destination hexadecimal string.
- * @param dst_len Length of the destination buffer.
- * @return true if the conversion was successful, false otherwise.
+ * @param[in]  src_dec Pointer to the source decimal string.
+ * @param[out] dst_hex Pointer to the destination hexadecimal string.
+ * @param[in]  dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len);
 
@@ -636,10 +655,11 @@ bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len);
  * into a binary string `dst_bin`. The output is padded with leading zeros to
  * ensure it is a multiple of 8 characters.
  *
- * @param src_hex Pointer to the source hexadecimal string.
- * @param dst_bin Pointer to the destination binary string.
- * @param dst_len Length of the destination buffer.
- * @return true if the conversion was successful, false otherwise.
+ * @param[in]  src_hex Pointer to the source hexadecimal string.
+ * @param[out] dst_bin Pointer to the destination binary string.
+ * @param[in]  dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len);
 
@@ -647,13 +667,13 @@ bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len);
  * @brief Converts a hexadecimal string to a decimal string.
  *
  * This function converts a hexadecimal number represented as a string `src_hex`
- * into a decimal string `dst_dec`. The output is padded with leading zeros to
- * ensure it is a multiple of 4 characters.
+ * into a decimal string `dst_dec`.
  *
- * @param src_hex Pointer to the source hexadecimal string.
- * @param dst_dec Pointer to the destination decimal string.
- * @param dst_len Length of the destination buffer.
- * @return true if the conversion was successful, false otherwise.
+ * @param[in]  src_hex Pointer to the source hexadecimal string.
+ * @param[out] dst_dec Pointer to the destination decimal string.
+ * @param[in]  dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_hex2dec(const char *src_hex, char *dst_dec, size_t dst_len);
 
