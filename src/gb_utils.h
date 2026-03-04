@@ -439,6 +439,8 @@
         for (size_t i = 0; i < N; ++i) ((uint32_t *)&(x))[i] = 0; \
     }
 
+#define SIZE_OF(x) (sizeof(x) / sizeof((x)[0]))
+
 // MATH macros
 #define GB_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define GB_MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -464,8 +466,8 @@
  * copying of memory.
  *
  * @param[out] dst Pointer to the destination memory area.
- * @param[in]  src Pointer to the source memory area.
- * @param[in]  len Number of bytes to copy.
+ * @param[in] src Pointer to the source memory area.
+ * @param[in] len Number of bytes to copy.
  *
  * @return A pointer to the destination memory area `dst`.
  */
@@ -479,10 +481,10 @@ void *gb_memcpy(void *dst, const void *src, size_t len);
  * setting of memory.
  *
  * @param[out] dst Pointer to the memory area to be set.
- * @param[in]  val The value to be set. The value is passed as an int, but the
+ * @param[in] val The value to be set. The value is passed as an int, but the
  * function fills the memory block using the unsigned char conversion of this
  * value.
- * @param[in]  len Number of bytes to be set to the value.
+ * @param[in] len Number of bytes to be set to the value.
  *
  * @return A pointer to the memory area `dst`.
  */
@@ -495,7 +497,7 @@ void *gb_memset(void *dst, int val, size_t len);
  * of `len` bytes. It uses a loop unrolling technique to optimize the process.
  *
  * @param[out] dst Pointer to the memory block to be zeroed.
- * @param[in]  len Number of bytes to set to zero.
+ * @param[in] len Number of bytes to set to zero.
  */
 void gb_bzero(void *dst, size_t len);
 
@@ -507,7 +509,7 @@ void gb_bzero(void *dst, size_t len);
  * terminating null character.
  *
  * @param[in] str Pointer to the null-terminated string to search.
- * @param[in] c   The character to locate (passed as an int).
+ * @param[in] c The character to locate (passed as an int).
  *
  * @return A pointer to the first occurrence of `c` in `str`, or `NULL` if the
  * character is not found.
@@ -526,7 +528,7 @@ char *gb_strchr(const char *str, int c);
  * Use with extreme caution.
  *
  * @param[out] dst Pointer to the destination buffer.
- * @param[in]  src Pointer to the source string.
+ * @param[in] src Pointer to the source string.
  *
  * @return A pointer to the destination buffer.
  */
@@ -543,8 +545,8 @@ char *gb_strcpy(char *dst, const char *src);
  * destination string is null-terminated, providing a safer alternative.
  *
  * @param[out] dst Pointer to the destination buffer.
- * @param[in]  src Pointer to the source string.
- * @param[in]  n   The maximum number of characters to copy from `src`.
+ * @param[in] src Pointer to the source string.
+ * @param[in] n The maximum number of characters to copy from `src`.
  *
  * @return A pointer to the destination buffer.
  */
@@ -571,13 +573,44 @@ int gb_strcmp(const char *str1, const char *str2);
  *
  * @param[in] str1 Pointer to the first string.
  * @param[in] str2 Pointer to the second string.
- * @param[in] n    The maximum number of characters to compare.
+ * @param[in] n The maximum number of characters to compare.
  *
  * @return An integer less than, equal to, or greater than zero if the first `n`
  * bytes of `str1` is found, respectively, to be less than, to match, or be
  * greater than the first `n` bytes of `str2`.
  */
 int gb_strncmp(const char *str1, const char *str2, size_t n);
+
+/**
+ * @brief Finds the first occurrence of any character from a set of characters.
+ *
+ * This function scans the null-terminated string `str` for the first
+ * occurrence of any character from the null-terminated string `reject`.
+ *
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] reject Pointer to the null-terminated string containing characters to reject.
+ *
+ * @return The number of characters at the beginning of `str` that are not
+ * in the `reject` string.
+ */
+size_t gb_strcspn(const char *str, const char *reject);
+
+/**
+ * @brief Splits a string into tokens using delimiters.
+ *
+ * This function parses the string `str` into a sequence of tokens, separated
+ * by one or more characters from the string `delim`. The `saveptr` argument
+ * maintains state between calls to continue tokenization of the same string.
+ *
+ * This is a thread-safe implementation equivalent to the standard strtok_r.
+ *
+ * @param[in] str String to tokenize (NULL to continue with previous string)
+ * @param[in] delim String containing delimiter characters
+ * @param[in,out] saveptr Pointer to save parsing state between calls
+ *
+ * @return Pointer to the next token, or NULL if no more tokens exist.
+ */
+char *gb_strtok_r(char *str, const char *delim, char **saveptr);
 
 /**
  * @brief Calculates the length of a string.
@@ -596,9 +629,9 @@ size_t gb_strlen(const char *str);
  * This function converts a binary number represented as a string `src_bin` into
  * a decimal string `dst_dec`.
  *
- * @param[in]  src_bin Pointer to the source binary string.
+ * @param[in] src_bin Pointer to the source binary string.
  * @param[out] dst_dec Pointer to the destination decimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -610,9 +643,9 @@ bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len);
  * This function converts a binary number represented as a string `src_bin` into
  * a hexadecimal string `dst_hex`.
  *
- * @param[in]  src_bin Pointer to the source binary string.
+ * @param[in] src_bin Pointer to the source binary string.
  * @param[out] dst_hex Pointer to the destination hexadecimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -625,9 +658,9 @@ bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len);
  * into a binary string `dst_bin`. The output is padded with leading zeros to
  * ensure it is a multiple of 8 characters.
  *
- * @param[in]  src_dec Pointer to the source decimal string.
+ * @param[in] src_dec Pointer to the source decimal string.
  * @param[out] dst_bin Pointer to the destination binary string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -640,9 +673,9 @@ bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len);
  * into a hexadecimal string `dst_hex`. The output is padded with leading zeros
  * to ensure it is a multiple of 4 characters.
  *
- * @param[in]  src_dec Pointer to the source decimal string.
+ * @param[in] src_dec Pointer to the source decimal string.
  * @param[out] dst_hex Pointer to the destination hexadecimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -655,9 +688,9 @@ bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len);
  * into a binary string `dst_bin`. The output is padded with leading zeros to
  * ensure it is a multiple of 8 characters.
  *
- * @param[in]  src_hex Pointer to the source hexadecimal string.
+ * @param[in] src_hex Pointer to the source hexadecimal string.
  * @param[out] dst_bin Pointer to the destination binary string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -669,13 +702,57 @@ bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len);
  * This function converts a hexadecimal number represented as a string `src_hex`
  * into a decimal string `dst_dec`.
  *
- * @param[in]  src_hex Pointer to the source hexadecimal string.
+ * @param[in] src_hex Pointer to the source hexadecimal string.
  * @param[out] dst_dec Pointer to the destination decimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
 bool gb_hex2dec(const char *src_hex, char *dst_dec, size_t dst_len);
+
+/**
+ * @brief Converts a binary data buffer to its hexadecimal string
+ * representation.
+ *
+ * This function takes a buffer of raw bytes and converts it into a
+ * null-terminated string of hexadecimal characters. Each byte in the source
+ * buffer is represented by two characters in the destination string.
+ *
+ * @param[in] src_hex Pointer to the source buffer containing the binary data.
+ * @param[in] src_len The number of bytes in the source buffer to convert.
+ * @param[out] dst_str Pointer to the destination buffer where the resulting
+ * hexadecimal string will be stored.
+ * @param[in] dst_len The size of the destination buffer in bytes. This must be
+ * at least (src_len * 2) + 1 to accommodate the full hexadecimal string and the
+ * null terminator.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
+ */
+
+bool gb_hex2str(const char *src_hex, size_t src_len, char *dst_str, size_t dst_len);
+
+/**
+ * @brief Converts a binary data buffer to its hexadecimal string
+ * representation, with byte reversal.
+ *
+ * This function reads a hexadecimal string and converts it into a raw byte
+ * buffer. It processes the input string from right to left, two characters (one
+ * byte) at a time. This results in a byte-reversed (endian-swapped) output
+ * buffer.
+ *
+ * For example, the input string "1A2B3C" would be processed as "3C", then "2B",
+ * then "1A", resulting in the output byte buffer {0x3C, 0x2B, 0x1A}.
+ *
+ * @param[in] src_str Pointer to the null-terminated source string of
+ * hexadecimal characters. The length of this string must be an even number.
+ * @param[out] dst_hex Pointer to the destination buffer where the resulting
+ * binary data will be stored.
+ * @param[in] dst_len The size of the destination buffer in bytes. This must be
+ * at least half the length of the source string.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
+ */
+bool gb_hex2str_r(const char *src_hex, size_t src_len, char *dst_str, size_t dst_len);
 
 #endif // GB_UTILS_H
 

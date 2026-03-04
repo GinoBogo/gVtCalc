@@ -16,6 +16,7 @@
 
 #include "gb_utils.h"
 
+#include <stddef.h> // size_t
 #include <stdint.h> // SIZE_MAX, uint32_t, uintptr_t
 #include <stdio.h>  // NULL, snprintf
 #include <stdlib.h> // strtoul
@@ -52,7 +53,7 @@
 
 // *****************************************************************************
 // *****************************************************************************
-// Public Functions
+// Local Defines
 // *****************************************************************************
 // *****************************************************************************
 
@@ -98,6 +99,176 @@
         _dst[i] = x;   \
         ++i;
 
+// *****************************************************************************
+// *****************************************************************************
+// Local Functions
+// *****************************************************************************
+// *****************************************************************************
+
+/**
+ * @brief Helper function to process unaligned bytes for skipping delimiters.
+ *
+ * @param[in] current Pointer to current position in string
+ * @param[in] is_delim Lookup table for delimiter characters
+ * @return Pointer to first non-delimiter character or NULL if end reached
+ */
+static inline char *_process_unaligned_skip(char *current, const bool *is_delim) {
+    while ((uintptr_t)current & (sizeof(uint32_t) - 1)) {
+        if (*current == '\0') {
+            return NULL;
+        }
+        if (!is_delim[(unsigned char)*current]) {
+            return current;
+        }
+        ++current;
+    }
+    return current;
+}
+
+/**
+ * @brief Helper function to process word-aligned bytes for skipping delimiters.
+ *
+ * @param[in] current Pointer to current position in string
+ * @param[in] is_delim Lookup table for delimiter characters
+ * @return Pointer to first non-delimiter character or NULL if end reached
+ */
+static inline char *_process_aligned_skip(char *current, const bool *is_delim) {
+    uint32_t word;
+    gb_memcpy(&word, current, sizeof(uint32_t));
+
+    // Check for null terminator
+    if (GB_HAS_ZERO(word)) {
+        for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+            if (current[i] == '\0') {
+                return NULL;
+            }
+            if (!is_delim[(unsigned char)current[i]]) {
+                return current + i;
+            }
+        }
+        return NULL;
+    }
+
+    // Check if any byte is not a delimiter
+    if (!is_delim[(unsigned char)current[0]] || !is_delim[(unsigned char)current[1]] ||
+        !is_delim[(unsigned char)current[2]] || !is_delim[(unsigned char)current[3]]) {
+        for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+            if (!is_delim[(unsigned char)current[i]]) {
+                return current + i;
+            }
+        }
+    }
+
+    return current + sizeof(uint32_t);
+}
+
+/**
+ * @brief Helper function to skip delimiter characters using word-aligned optimization.
+ *
+ * @param[in] current Pointer to current position in string
+ * @param[in] is_delim Lookup table for delimiter characters
+ * @return Pointer to first non-delimiter character or NULL if end reached
+ */
+static char *_skip_delimiters(char *current, const bool *is_delim) {
+    while (*current) {
+        current = _process_unaligned_skip(current, is_delim);
+        if (current == NULL || !(*current)) {
+            return current;
+        }
+
+        if (!((uintptr_t)current & (sizeof(uint32_t) - 1))) {
+            char *next_pos = _process_aligned_skip(current, is_delim);
+            if (next_pos <= current) {
+                return next_pos;
+            }
+            current = next_pos;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Helper function to process unaligned bytes for finding token end.
+ *
+ * @param[in] current Pointer to current position in string
+ * @param[in] is_delim Lookup table for delimiter characters
+ * @return Pointer to first delimiter character or end of string
+ */
+static inline char *_process_unaligned_end(char *current, const bool *is_delim) {
+    while ((uintptr_t)current & (sizeof(uint32_t) - 1)) {
+        if (*current == '\0' || is_delim[(unsigned char)*current]) {
+            return current;
+        }
+        ++current;
+    }
+    return current;
+}
+
+/**
+ * @brief Helper function to process word-aligned bytes for finding token end.
+ *
+ * @param[in] current Pointer to current position in string
+ * @param[in] is_delim Lookup table for delimiter characters
+ * @return Pointer to first delimiter character or end of string
+ */
+static inline char *_process_aligned_end(char *current, const bool *is_delim) {
+    uint32_t word;
+    gb_memcpy(&word, current, sizeof(uint32_t));
+
+    // Check for null terminator
+    if (GB_HAS_ZERO(word)) {
+        for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+            if (current[i] == '\0' || is_delim[(unsigned char)current[i]]) {
+                return current + i;
+            }
+        }
+        return current + sizeof(uint32_t);
+    }
+
+    // Check if any byte is a delimiter
+    if (is_delim[(unsigned char)current[0]] || is_delim[(unsigned char)current[1]] ||
+        is_delim[(unsigned char)current[2]] || is_delim[(unsigned char)current[3]]) {
+        for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+            if (is_delim[(unsigned char)current[i]]) {
+                return current + i;
+            }
+        }
+    }
+
+    return current + sizeof(uint32_t);
+}
+
+/**
+ * @brief Helper function to find end of token using word-aligned optimization.
+ *
+ * @param[in] current Pointer to current position in string
+ * @param[in] is_delim Lookup table for delimiter characters
+ * @return Pointer to first delimiter character or end of string
+ */
+static char *_find_token_end(char *current, const bool *is_delim) {
+    while (*current) {
+        current = _process_unaligned_end(current, is_delim);
+        if (*current == '\0' || is_delim[(unsigned char)*current]) {
+            return current;
+        }
+
+        if (!((uintptr_t)current & (sizeof(uint32_t) - 1))) {
+            char *next_pos = _process_aligned_end(current, is_delim);
+            if (next_pos <= current) {
+                return next_pos;
+            }
+            current = next_pos;
+        }
+    }
+    return current;
+}
+
+// *****************************************************************************
+// *****************************************************************************
+// Public Functions
+// *****************************************************************************
+// *****************************************************************************
+
 /**
  * @brief Copies a block of memory from source to destination.
  *
@@ -106,8 +277,8 @@
  * copying of memory.
  *
  * @param[out] dst Pointer to the destination memory area.
- * @param[in]  src Pointer to the source memory area.
- * @param[in]  len Number of bytes to copy.
+ * @param[in] src Pointer to the source memory area.
+ * @param[in] len Number of bytes to copy.
  *
  * @return A pointer to the destination memory area `dst`.
  */
@@ -145,10 +316,10 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
  * setting of memory.
  *
  * @param[out] dst Pointer to the memory area to be set.
- * @param[in]  val The value to be set. The value is passed as an int, but the
+ * @param[in] val The value to be set. The value is passed as an int, but the
  * function fills the memory block using the unsigned char conversion of this
  * value.
- * @param[in]  len Number of bytes to be set to the value.
+ * @param[in] len Number of bytes to be set to the value.
  *
  * @return A pointer to the memory area `dst`.
  */
@@ -184,7 +355,7 @@ void *gb_memset(void *dst, int val, size_t len) {
  * of `len` bytes. It uses a loop unrolling technique to optimize the process.
  *
  * @param[out] dst Pointer to the memory block to be zeroed.
- * @param[in]  len Number of bytes to set to zero.
+ * @param[in] len Number of bytes to set to zero.
  */
 void gb_bzero(void *dst, size_t len) {
     char *_dst = (char *)dst;
@@ -217,7 +388,7 @@ void gb_bzero(void *dst, size_t len) {
  * terminating null character.
  *
  * @param[in] str Pointer to the null-terminated string to search.
- * @param[in] c   The character to locate (passed as an int).
+ * @param[in] c The character to locate (passed as an int).
  *
  * @return A pointer to the first occurrence of `c` in `str`, or `NULL` if the
  * character is not found.
@@ -271,7 +442,7 @@ char *gb_strchr(const char *str, int c) {
  * Use with extreme caution.
  *
  * @param[out] dst Pointer to the destination buffer.
- * @param[in]  src Pointer to the source string.
+ * @param[in] src Pointer to the source string.
  *
  * @return A pointer to the destination buffer.
  */
@@ -282,8 +453,7 @@ char *gb_strcpy(char *dst, const char *src) {
 
     char *ptr = dst;
 
-    while ((*src) && (((uintptr_t)ptr % sizeof(uint32_t)) || //
-                      ((uintptr_t)src % sizeof(uint32_t)))) {
+    while ((*src) && (((uintptr_t)ptr % sizeof(uint32_t)) || ((uintptr_t)src % sizeof(uint32_t)))) {
         *ptr = *src;
 
         ++ptr;
@@ -329,8 +499,8 @@ char *gb_strcpy(char *dst, const char *src) {
  * destination string is null-terminated, providing a safer alternative.
  *
  * @param[out] dst Pointer to the destination buffer.
- * @param[in]  src Pointer to the source string.
- * @param[in]  n   The maximum number of characters to copy from `src`.
+ * @param[in] src Pointer to the source string.
+ * @param[in] n The maximum number of characters to copy from `src`.
  *
  * @return A pointer to the destination buffer.
  */
@@ -441,7 +611,7 @@ int gb_strcmp(const char *str1, const char *str2) {
  *
  * @param[in] str1 Pointer to the first string.
  * @param[in] str2 Pointer to the second string.
- * @param[in] n    The maximum number of characters to compare.
+ * @param[in] n The maximum number of characters to compare.
  *
  * @return An integer less than, equal to, or greater than zero if the first `n`
  * bytes of `str1` is found, respectively, to be less than, to match, or be
@@ -501,6 +671,127 @@ int gb_strncmp(const char *str1, const char *str2, size_t n) {
 }
 
 /**
+ * @brief Finds the first occurrence of any character from a set of characters.
+ *
+ * This function scans the null-terminated string `str` for the first
+ * occurrence of any character from the null-terminated string `reject`.
+ *
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] reject Pointer to the null-terminated string containing characters to reject.
+ *
+ * @return The number of characters at the beginning of `str` that are not
+ * in the `reject` string.
+ */
+size_t gb_strcspn(const char *str, const char *reject) {
+    if (!str || !reject) {
+        return 0;
+    }
+
+    // Create lookup table for O(1) character checking
+    static bool lookup[256];
+    for (int i = 0; i < 256; ++i) {
+        lookup[i] = false;
+    }
+
+    const char *r = reject;
+    while (*r) {
+        lookup[(unsigned char)*r] = true;
+        ++r;
+    }
+
+    const char *p = str;
+
+    // Simple optimized loop with lookup table
+    while (*p) {
+        if (lookup[(unsigned char)*p]) {
+            break;
+        }
+        ++p;
+    }
+
+    return (size_t)(p - str);
+}
+
+/*=============================================================================
+  PUBLIC FUNCTIONS
+=============================================================================*/
+
+/**
+ * @brief Splits a string into tokens using delimiters.
+ *
+ * This function parses the string `str` into a sequence of tokens, separated
+ * by one or more characters from the string `delim`. The `saveptr` argument
+ * maintains state between calls to continue tokenization of the same string.
+ *
+ * This is a thread-safe implementation equivalent to the standard strtok_r.
+ *
+ * @param[in] str String to tokenize (NULL to continue with previous string)
+ * @param[in] delim String containing delimiter characters
+ * @param[in,out] saveptr Pointer to save parsing state between calls
+ *
+ * @return Pointer to the next token, or NULL if no more tokens exist.
+ */
+char *gb_strtok_r(char *str, const char *delim, char **saveptr) {
+    if (!delim || !saveptr) {
+        return NULL;
+    }
+
+    // If str is not NULL, start new tokenization
+    if (str != NULL) {
+        *saveptr = str;
+    }
+
+    char *current = *saveptr;
+    if (current == NULL) {
+        return NULL;
+    }
+
+    // Persistent lookup table for delimiter characters
+    static bool is_delim[256];
+    static char last_delims[32]   = {0};
+    static bool table_initialized = false;
+
+    // Only rebuild table if delimiters changed
+    if (!table_initialized || gb_strcmp(last_delims, delim) != 0) {
+        // Initialize lookup table
+        for (int i = 0; i < 256; ++i) {
+            is_delim[i] = false;
+        }
+
+        const char *d = delim;
+        while (*d) {
+            is_delim[(unsigned char)*d] = true;
+            ++d;
+        }
+
+        // Save current delimiters for next comparison
+        gb_strncpy(last_delims, delim, sizeof(last_delims) - 1);
+        last_delims[sizeof(last_delims) - 1] = '\0';
+        table_initialized                    = true;
+    }
+
+    // Skip leading delimiters
+    current = _skip_delimiters(current, is_delim);
+    if (current == NULL) {
+        *saveptr = NULL;
+        return NULL;
+    }
+
+    // Find end of token
+    char *token_start = current;
+    char *token_end   = _find_token_end(current, is_delim);
+
+    // Null-terminate the token
+    if (*token_end != '\0') {
+        *token_end = '\0';
+        ++token_end;
+    }
+
+    *saveptr = token_end;
+    return token_start;
+}
+
+/**
  * @brief Calculates the length of a string.
  *
  * This function calculates the length of the null-terminated string `str`.
@@ -546,9 +837,9 @@ size_t gb_strlen(const char *str) {
  * This function converts a binary number represented as a string `src_bin` into
  * a decimal string `dst_dec`.
  *
- * @param[in]  src_bin Pointer to the source binary string.
+ * @param[in] src_bin Pointer to the source binary string.
  * @param[out] dst_dec Pointer to the destination decimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -575,9 +866,9 @@ bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len) {
  * This function converts a binary number represented as a string `src_bin` into
  * a hexadecimal string `dst_hex`.
  *
- * @param[in]  src_bin Pointer to the source binary string.
+ * @param[in] src_bin Pointer to the source binary string.
  * @param[out] dst_hex Pointer to the destination hexadecimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -598,7 +889,16 @@ bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len) {
     return rvalue;
 }
 
-bool __unsafe_dec2bin(size_t num, char *dst_bin, size_t dst_len) {
+/**
+ * @brief Converts a decimal string to a binary string.
+ *
+ * @param[in] num Decimal number to convert
+ * @param[out] dst_bin Pointer to the destination binary string.
+ * @param[in] dst_len Length of the destination buffer.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
+ */
+bool _unsafe_dec2bin(size_t num, char *dst_bin, size_t dst_len) {
 #if SIZE_MAX == 0xFFFFFFFFUL
     int bits = (num) ? 32 - __builtin_clz(num) : 1;
 #else
@@ -632,9 +932,9 @@ bool __unsafe_dec2bin(size_t num, char *dst_bin, size_t dst_len) {
  * into a binary string `dst_bin`. The output is padded with leading zeros to
  * ensure it is a multiple of 8 characters.
  *
- * @param[in]  src_dec Pointer to the source decimal string.
+ * @param[in] src_dec Pointer to the source decimal string.
  * @param[out] dst_bin Pointer to the destination binary string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -648,7 +948,7 @@ bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len) {
         rvalue = !(*err);
 
         if (rvalue) {
-            rvalue = __unsafe_dec2bin(num, dst_bin, dst_len);
+            rvalue = _unsafe_dec2bin(num, dst_bin, dst_len);
         }
     }
 
@@ -662,9 +962,9 @@ bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len) {
  * into a hexadecimal string `dst_hex`. The output is padded with leading zeros
  * to ensure it is a multiple of 4 characters.
  *
- * @param[in]  src_dec Pointer to the source decimal string.
+ * @param[in] src_dec Pointer to the source decimal string.
  * @param[out] dst_hex Pointer to the destination hexadecimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -710,9 +1010,9 @@ bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len) {
  * into a binary string `dst_bin`. The output is padded with leading zeros to
  * ensure it is a multiple of 8 characters.
  *
- * @param[in]  src_hex Pointer to the source hexadecimal string.
+ * @param[in] src_hex Pointer to the source hexadecimal string.
  * @param[out] dst_bin Pointer to the destination binary string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -726,7 +1026,7 @@ bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len) {
         rvalue = !(*err);
 
         if (rvalue) {
-            rvalue = __unsafe_dec2bin(num, dst_bin, dst_len);
+            rvalue = _unsafe_dec2bin(num, dst_bin, dst_len);
         }
     }
 
@@ -739,9 +1039,9 @@ bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len) {
  * This function converts a hexadecimal number represented as a string `src_hex`
  * into a decimal string `dst_dec`.
  *
- * @param[in]  src_hex Pointer to the source hexadecimal string.
+ * @param[in] src_hex Pointer to the source hexadecimal string.
  * @param[out] dst_dec Pointer to the destination decimal string.
- * @param[in]  dst_len Length of the destination buffer.
+ * @param[in] dst_len Length of the destination buffer.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
@@ -757,6 +1057,79 @@ bool gb_hex2dec(const char *src_hex, char *dst_dec, size_t dst_len) {
         if (rvalue) {
             rvalue = snprintf(dst_dec, dst_len, "%zd", num) > 0;
         }
+    }
+
+    return rvalue;
+}
+
+/**
+ * @brief Converts a binary data buffer to its hexadecimal string
+ * representation.
+ *
+ * This function takes a buffer of raw bytes and converts it into a
+ * null-terminated string of hexadecimal characters. Each byte in the source
+ * buffer is represented by two characters in the destination string.
+ *
+ * @param[in] src_hex Pointer to the source buffer containing the binary data.
+ * @param[in] src_len The number of bytes in the source buffer to convert.
+ * @param[out] dst_str Pointer to the destination buffer where the resulting
+ * hexadecimal string will be stored.
+ * @param[in] dst_len The size of the destination buffer in bytes. This must be
+ * at least (src_len * 2) + 1 to accommodate the full hexadecimal string and the
+ * null terminator.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
+ */
+bool gb_hex2str(const char *src_hex, size_t src_len, char *dst_str, size_t dst_len) {
+    bool rvalue = (src_hex && src_len && dst_str && dst_len > src_len * 2);
+
+    if (rvalue) {
+        const char hex_chars[] = "0123456789ABCDEF";
+
+        for (size_t i = 0; i < src_len; ++i) {
+            dst_str[(i * 2) + 0] = hex_chars[(src_hex[i] >> 4) & 0x0F];
+            dst_str[(i * 2) + 1] = hex_chars[(src_hex[i] >> 0) & 0x0F];
+        }
+
+        dst_str[src_len * 2] = '\0';
+    }
+
+    return rvalue;
+}
+
+/**
+ * @brief Converts a binary data buffer to its hexadecimal string
+ * representation, with byte reversal.
+ *
+ * This function reads a hexadecimal string and converts it into a raw byte
+ * buffer. It processes the input string from right to left, two characters (one
+ * byte) at a time. This results in a byte-reversed (endian-swapped) output
+ * buffer.
+ *
+ * For example, the input string "1A2B3C" would be processed as "3C", then "2B",
+ * then "1A", resulting in the output byte buffer {0x3C, 0x2B, 0x1A}.
+ *
+ * @param[in] src_str Pointer to the null-terminated source string of
+ * hexadecimal characters. The length of this string must be an even number.
+ * @param[out] dst_hex Pointer to the destination buffer where the resulting
+ * binary data will be stored.
+ * @param[in] dst_len The size of the destination buffer in bytes. This must be
+ * at least half the length of the source string.
+ *
+ * @return `true` if the conversion was successful, `false` otherwise.
+ */
+bool gb_hex2str_r(const char *src_hex, size_t src_len, char *dst_str, size_t dst_len) {
+    bool rvalue = (src_hex && src_len && dst_str && dst_len > src_len * 2);
+
+    if (rvalue) {
+        const char hex_chars[] = "0123456789ABCDEF";
+
+        for (size_t i = 0; i < src_len; ++i) {
+            dst_str[(i * 2) + 0] = hex_chars[(src_hex[src_len - 1 - i] >> 4) & 0x0F];
+            dst_str[(i * 2) + 1] = hex_chars[(src_hex[src_len - 1 - i] >> 0) & 0x0F];
+        }
+
+        dst_str[src_len * 2] = '\0';
     }
 
     return rvalue;
