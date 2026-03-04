@@ -517,6 +517,36 @@ void gb_bzero(void *dst, size_t len);
 char *gb_strchr(const char *str, int c);
 
 /**
+ * @brief Finds the last occurrence of a character in a string.
+ *
+ * This function searches for the last occurrence of the character `c` in the
+ * string `str`. If `c` is the null character '\0', it returns a pointer to the
+ * terminating null character.
+ *
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] c The character to locate (passed as an int).
+ *
+ * @return A pointer to the last occurrence of `c` in `str`, or `NULL` if the
+ * character is not found.
+ */
+char *gb_strrchr(const char *str, int c);
+
+/**
+ * @brief Finds the first occurrence of a substring in a string.
+ *
+ * This function searches for the first occurrence of the substring `needle`
+ * in the string `haystack`. If `needle` is an empty string, it returns a
+ * pointer to `haystack`.
+ *
+ * @param[in] haystack Pointer to the null-terminated string to search in.
+ * @param[in] needle Pointer to the null-terminated substring to find.
+ *
+ * @return A pointer to the first occurrence of `needle` in `haystack`, or
+ * `NULL` if the substring is not found.
+ */
+char *gb_strstr(const char *haystack, const char *needle);
+
+/**
  * @brief Copies a string from source to destination.
  *
  * This function copies the string pointed to by `src` (including the null

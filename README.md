@@ -16,6 +16,8 @@ A lightweight utility library providing optimized string manipulation, memory ma
 
 **String Functions:**
 *   `gb_strchr()`: Find first occurrence of character in string
+*   `gb_strrchr()`: Find last occurrence of character in string
+*   `gb_strstr()`: Find first occurrence of substring in string
 *   `gb_strcpy()`: Optimized string copy with word-aligned operations
 *   `gb_strncpy()`: Safe string copy with size limit and null termination
 *   `gb_strcmp()`: Optimized string comparison with word-aligned operations
@@ -48,11 +50,11 @@ The gb_utils library is highly optimized for performance-critical embedded syste
 
 **Duff's Device Implementation**
 - Used in `gb_memcpy()`, `gb_memset()`, `gb_bzero()`
-- Loop unrolling with 8-byte processing per iteration
+- Loop unrolling with 8 operations per iteration (32 bytes total)
 - 25-40% faster than naive byte-by-byte loops
 
 **Word-Aligned Memory Operations**
-- Used in `gb_strchr()`, `gb_strcpy()`, `gb_strcmp()`, `gb_strlen()`
+- Used in `gb_strchr()`, `gb_strrchr()`, `gb_strstr()`, `gb_strcpy()`, `gb_strcmp()`, `gb_strlen()`
 - Processes 32-bit words instead of individual bytes
 - ~4x speedup for aligned strings
 
@@ -67,6 +69,29 @@ The gb_utils library is highly optimized for performance-critical embedded syste
 - Eliminates linear search through delimiter strings
 
 #### Performance Benchmarks
+
+**When to Use gb_utils vs Standard Library**
+
+Modern standard libraries (glibc, musl, etc.) are highly optimized, so gb_utils provides benefits in specific scenarios:
+
+**gb_utils advantages over modern standard libraries:**
+- **Deterministic performance** - No dynamic branching or CPU-specific optimizations that can cause jitter
+- **Predictable memory access patterns** - Consistent word-aligned operations for real-time systems
+- **Smaller code footprint** - ~2KB vs ~50KB for full string/memory implementations
+- **No CPU feature detection overhead** - Standard libraries may dispatch to different implementations based on CPU features
+- **Embedded-friendly** - Designed for systems without advanced CPU instructions (SIMD, AVX)
+
+**Duff's Device Functions (`gb_memcpy`, `gb_memset`, `gb_bzero`)**
+These functions are advantageous when:
+- **Microcontrollers without SIMD** - Standard libraries can't use vectorized instructions
+- **Real-time constraints** - Consistent execution time without CPU feature detection
+- **Memory-mapped I/O** - Predictable access patterns for hardware registers
+- **Boot firmware/BIOS** - Small code size and deterministic behavior
+- **Buffer size 64-1024 bytes** - Sweet spot where alignment overhead pays off
+
+**Note:** On modern x86_64 with SIMD, standard `memcpy()`/`memset()` may be faster for large buffers (>4KB) due to vectorized instructions.
+
+For general-purpose applications on modern systems, standard library functions are usually sufficient.
 
 **Compared to Standard Library**
 - Memory operations: 25-40% faster than `memcpy()`/`memset()`

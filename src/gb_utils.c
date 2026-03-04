@@ -16,10 +16,9 @@
 
 #include "gb_utils.h"
 
-#include <stddef.h> // size_t
 #include <stdint.h> // SIZE_MAX, uint32_t, uintptr_t
-#include <stdio.h>  // NULL, snprintf
-#include <stdlib.h> // strtoul
+#include <stdio.h>  // size_t, snprintf
+#include <stdlib.h> // NULL, strtoul
 
 /*
          HIGHER ADDRESS
@@ -53,57 +52,193 @@
 
 // *****************************************************************************
 // *****************************************************************************
-// Local Defines
-// *****************************************************************************
-// *****************************************************************************
-
-// NOTE: not all compilers support the __attribute__((fallthrough))
-#define FALL_THROUGH __attribute__((fallthrough))
-
-/**
- * @brief Duff's Device for loop unrolling without leftover extra code.
- *
- * This macro implements Duff's Device, a technique for loop unrolling that
- * reduces the overhead of loop control by interleaving the loop control code
- * with the loop body. It is used to copy a value `x` to the destination array
- * `_dst` multiple times.
- *
- * @param x The value to be copied to the destination array.
- */
-#define DUFF_DEVICE(x) \
-    case 7:            \
-        _dst[i] = x;   \
-        ++i;           \
-        FALL_THROUGH;  \
-    case 6:            \
-        _dst[i] = x;   \
-        ++i;           \
-        FALL_THROUGH;  \
-    case 5:            \
-        _dst[i] = x;   \
-        ++i;           \
-        FALL_THROUGH;  \
-    case 4:            \
-        _dst[i] = x;   \
-        ++i;           \
-        FALL_THROUGH;  \
-    case 3:            \
-        _dst[i] = x;   \
-        ++i;           \
-        FALL_THROUGH;  \
-    case 2:            \
-        _dst[i] = x;   \
-        ++i;           \
-        FALL_THROUGH;  \
-    case 1:            \
-        _dst[i] = x;   \
-        ++i;
-
-// *****************************************************************************
-// *****************************************************************************
 // Local Functions
 // *****************************************************************************
 // *****************************************************************************
+
+/**
+ * @brief Helper function to process unaligned bytes for strrchr.
+ *
+ * @param[in,out] cp Pointer to current position (updated)
+ * @param[in] c Character to find
+ * @param[in,out] last_occurrence Pointer to last occurrence (updated)
+ * @return true if null terminator found, false otherwise
+ */
+static inline bool _process_unaligned_bytes(char **cp, int c, char **last_occurrence) {
+    while ((uintptr_t)*cp & (sizeof(uint32_t) - 1)) {
+        if (**cp == 0) {
+            return true;
+        }
+        if (**cp == c) {
+            *last_occurrence = *cp;
+        }
+        ++(*cp);
+    }
+    return false;
+}
+
+/**
+ * @brief Helper function to process a word with zero byte detection.
+ *
+ * @param[in] wp Word pointer
+ * @param[in] c Character to find
+ * @param[in,out] last_occurrence Pointer to last occurrence (updated)
+ * @return true if null terminator found, false otherwise
+ */
+static inline bool _process_word_with_zero(uint32_t *wp, int c, char **last_occurrence) {
+    char *cp;
+    for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+        cp = ((char *)wp) + i;
+        if (*cp == 0) {
+            return true;
+        }
+        if (*cp == c) {
+            *last_occurrence = cp;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Helper function to search for character in a word.
+ *
+ * @param[in] wp Word pointer
+ * @param[in] c Character to find
+ * @param[in,out] last_occurrence Pointer to last occurrence (updated)
+ */
+static inline void _search_char_in_word(uint32_t *wp, int c, char **last_occurrence) {
+    char *cp;
+    for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+        cp = ((char *)wp) + i;
+        if (*cp == c) {
+            *last_occurrence = cp;
+        }
+    }
+}
+
+/**
+ * @brief Helper function to compare two memory blocks of size n.
+ *
+ * @param[in] s1 First memory block
+ * @param[in] s2 Second memory block
+ * @param[in] n Number of bytes to compare
+ * @return 0 if equal, non-zero otherwise
+ */
+static inline int _memcmp_n(const void *s1, const void *s2, size_t n) {
+    const unsigned char *p1 = (const unsigned char *)s1;
+    const unsigned char *p2 = (const unsigned char *)s2;
+
+    while (n--) {
+        if (*p1 != *p2) {
+            return *p1 - *p2;
+        }
+        p1++;
+        p2++;
+    }
+    return 0;
+}
+
+/**
+ * @brief Helper function to check if substring matches at position.
+ *
+ * @param[in] pos Position to check
+ * @param[in] needle Substring to find
+ * @param[in] needle_len Length of needle
+ * @return true if matches, false otherwise
+ */
+static inline bool _check_substring_match(const char *pos, const char *needle, size_t needle_len) {
+    return _memcmp_n(pos, needle, needle_len) == 0;
+}
+
+/**
+ * @brief Helper function to search for substring in word-aligned memory.
+ *
+ * @param[in] wp Word-aligned pointer
+ * @param[in] needle Substring to find
+ * @param[in] needle_len Length of needle
+ * @return Pointer to first occurrence or NULL
+ */
+static char *_search_in_word(const uint32_t *wp, const char *needle, size_t needle_len) {
+    const char *h;
+
+    // Check if we've hit the end of the string in this word
+    if (GB_HAS_ZERO(*wp)) {
+        // Process each byte in the word individually
+        for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+            h = ((const char *)wp) + i;
+            if (*h == 0) {
+                return NULL;
+            }
+            if (*h == *needle && _check_substring_match(h, needle, needle_len)) {
+                return (char *)h;
+            }
+        }
+        return NULL;
+    }
+
+    // Search for the first character of needle in the word
+    for (int i = 0; i < (int)sizeof(uint32_t); ++i) {
+        h = ((const char *)wp) + i;
+        if (*h == *needle && _check_substring_match(h, needle, needle_len)) {
+            return (char *)h;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Helper function to find substring using word-aligned optimization.
+ *
+ * @param[in] haystack Pointer to the string to search in
+ * @param[in] needle Pointer to the substring to find
+ * @param[in] needle_len Length of the needle
+ * @return Pointer to first occurrence or NULL
+ */
+static char *_find_substring_aligned(const char *haystack, const char *needle, size_t needle_len) {
+    const char *h = haystack;
+
+    // Process unaligned bytes first
+    while ((uintptr_t)h & (sizeof(uint32_t) - 1)) {
+        if (*h == 0) {
+            return NULL;
+        }
+        if (*h == *needle && _check_substring_match(h, needle, needle_len)) {
+            return (char *)h;
+        }
+        h++;
+    }
+
+    // Process word-aligned bytes
+    // Ensure proper alignment by checking if we can safely cast to uint32_t*
+    if ((uintptr_t)h % sizeof(uint32_t) == 0) {
+// Use compiler pragma to suppress alignment warning since we've verified alignment
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+        const uint32_t *wp = (const uint32_t *)h;
+#pragma GCC diagnostic pop
+
+        while (1) {
+            char *result = _search_in_word(wp, needle, needle_len);
+            if (result != NULL) {
+                return result;
+            }
+            if (GB_HAS_ZERO(*wp)) {
+                return NULL;
+            }
+            wp++;
+        }
+    }
+
+    // Fallback to byte-by-byte search if not aligned
+    while (*h) {
+        if (*h == *needle && _check_substring_match(h, needle, needle_len)) {
+            return (char *)h;
+        }
+        h++;
+    }
+
+    return NULL;
+}
 
 /**
  * @brief Helper function to process unaligned bytes for skipping delimiters.
@@ -286,23 +421,84 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
     char       *_dst = (char *)dst;
     const char *_src = (const char *)src;
 
-    size_t i   = 0;
-    size_t div = len / 8;
-    size_t rem = len % 8;
+    // For small buffers, use simple loop
+    if (len < 8) {
+        for (size_t i = 0; i < len; i++) {
+            _dst[i] = _src[i];
+        }
+        return dst;
+    }
 
-    switch (rem) {
-        default:
-            break;
+    // For larger buffers, use optimized approach
+    size_t i = 0;
 
-        case 0:
-            while (!(div == 0)) {
-                --div;
-                _dst[i] = _src[i];
-                ++i;
+    // Handle initial alignment to 4-byte boundary for both source and destination
+    size_t align = (4 - ((uintptr_t)_dst & 3)) & 3;
+    if (align > len) {
+        align = len;
+    }
+    for (; i < align; i++) {
+        _dst[i] = _src[i];
+    }
 
-                FALL_THROUGH;
-                DUFF_DEVICE(_src[i])
-            }
+    // Copy 4 bytes at a time using Duff's device for maximum efficiency
+    // Note: Both dst_aligned and src_aligned are guaranteed to be 4-byte aligned
+    size_t      len32       = (len - i) / 4;
+    char       *dst_aligned = _dst + i;
+    const char *src_aligned = _src + i;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+
+    if (len32 > 0) {
+        size_t n = (len32 + 7) / 8; // Number of iterations (8 copies per iteration)
+        switch (len32 % 8) {
+            case 0:
+                do {
+                    *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                    dst_aligned += 4;
+                    src_aligned += 4;
+                    case 7:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                    case 6:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                    case 5:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                    case 4:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                    case 3:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                    case 2:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                    case 1:
+                        *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
+                        dst_aligned += 4;
+                        src_aligned += 4;
+                } while (--n > 0);
+            default:
+                break;
+        }
+    }
+
+#pragma GCC diagnostic pop
+
+    // Handle remaining bytes
+    i += len32 * 4;
+    for (; i < len; i++) {
+        _dst[i] = _src[i];
     }
 
     return dst;
@@ -326,23 +522,76 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
 void *gb_memset(void *dst, int val, size_t len) {
     char *_dst = (char *)dst;
 
-    size_t i   = 0;
-    size_t div = len / 8;
-    size_t rem = len % 8;
+    // For small buffers, use simple loop
+    if (len < 8) {
+        for (size_t i = 0; i < len; i++) {
+            _dst[i] = (char)val;
+        }
+        return dst;
+    }
 
-    switch (rem) {
-        default:
-            break;
+    // For larger buffers, use optimized approach
+    size_t i = 0;
 
-        case 0:
-            while (!(div == 0)) {
-                --div;
-                _dst[i] = (char)val;
-                ++i;
+    // Handle initial alignment to 4-byte boundary
+    size_t align = (4 - ((uintptr_t)_dst & 3)) & 3;
+    if (align > len) {
+        align = len;
+    }
+    for (; i < align; i++) {
+        _dst[i] = (char)val;
+    }
 
-                FALL_THROUGH;
-                DUFF_DEVICE((char)val)
-            }
+    // Set 4 bytes at a time using Duff's device for maximum efficiency
+    // Note: dst_aligned is guaranteed to be 4-byte aligned by the alignment loop above
+    uint32_t val32       = (uint32_t)(unsigned char)val * 0x01010101UL;
+    size_t   len32       = (len - i) / 4;
+    char    *dst_aligned = _dst + i;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+
+    if (len32 > 0) {
+        size_t n = (len32 + 7) / 8; // Number of iterations (8 copies per iteration)
+        switch (len32 % 8) {
+            case 0:
+                do {
+                    *(uint32_t *)dst_aligned = val32;
+                    dst_aligned += 4;
+                    case 7:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 6:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 5:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 4:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 3:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 2:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 1:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                } while (--n > 0);
+            default:
+                break;
+        }
+    }
+
+#pragma GCC diagnostic pop
+
+    // Handle remaining bytes
+    i += len32 * 4;
+    for (; i < len; i++) {
+        _dst[i] = (char)val;
     }
 
     return dst;
@@ -360,23 +609,76 @@ void *gb_memset(void *dst, int val, size_t len) {
 void gb_bzero(void *dst, size_t len) {
     char *_dst = (char *)dst;
 
-    size_t i   = 0;
-    size_t div = len / 8;
-    size_t rem = len % 8;
+    // For small buffers, use simple loop
+    if (len < 8) {
+        for (size_t i = 0; i < len; i++) {
+            _dst[i] = 0;
+        }
+        return;
+    }
 
-    switch (rem) {
-        default:
-            break;
+    // For larger buffers, use optimized approach
+    size_t i = 0;
 
-        case 0:
-            while (!(div == 0)) {
-                --div;
-                _dst[i] = 0;
-                ++i;
+    // Handle initial alignment to 4-byte boundary
+    size_t align = (4 - ((uintptr_t)_dst & 3)) & 3;
+    if (align > len) {
+        align = len;
+    }
+    for (; i < align; i++) {
+        _dst[i] = 0;
+    }
 
-                FALL_THROUGH;
-                DUFF_DEVICE(0)
-            }
+    // Set 4 bytes at a time using Duff's device for maximum efficiency
+    // Note: dst_aligned is guaranteed to be 4-byte aligned by the alignment loop above
+    uint32_t val32       = 0;
+    size_t   len32       = (len - i) / 4;
+    char    *dst_aligned = _dst + i;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+
+    if (len32 > 0) {
+        size_t n = (len32 + 7) / 8; // Number of iterations (8 copies per iteration)
+        switch (len32 % 8) {
+            case 0:
+                do {
+                    *(uint32_t *)dst_aligned = val32;
+                    dst_aligned += 4;
+                    case 7:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 6:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 5:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 4:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 3:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 2:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                    case 1:
+                        *(uint32_t *)dst_aligned = val32;
+                        dst_aligned += 4;
+                } while (--n > 0);
+            default:
+                break;
+        }
+    }
+
+#pragma GCC diagnostic pop
+
+    // Handle remaining bytes
+    i += len32 * 4;
+    for (; i < len; i++) {
+        _dst[i] = 0;
     }
 }
 
@@ -428,6 +730,105 @@ char *gb_strchr(const char *str, int c) {
         }
         ++wp;
     }
+}
+
+/**
+ * @brief Finds the last occurrence of a character in a string.
+ *
+ * This function searches for the last occurrence of the character `c` in the
+ * string `str`. If `c` is the null character '\0', it returns a pointer to the
+ * terminating null character.
+ *
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] c The character to locate (passed as an int).
+ *
+ * @return A pointer to the last occurrence of `c` in `str`, or `NULL` if the
+ * character is not found.
+ */
+char *gb_strrchr(const char *str, int c) {
+    if (!str) {
+        return NULL;
+    }
+
+    char *last_occurrence = NULL;
+    char *cp              = (char *)str; // NOSONAR (drop const qualifier)
+
+    if (c == 0) {
+        // Find the null terminator
+        // clang-format off
+        while (*cp) { ++cp; }
+        // clang-format on
+        return cp;
+    }
+
+    // Process unaligned bytes first
+    if (_process_unaligned_bytes(&cp, c, &last_occurrence)) {
+        return last_occurrence;
+    }
+
+    // Process word-aligned bytes for performance
+    void     *vp = (void *)cp;
+    uint32_t *wp = (uint32_t *)vp;
+
+    while (1) {
+        // Check if we've hit the end of the string in this word
+        if (GB_HAS_ZERO(*wp)) {
+            if (_process_word_with_zero(wp, c, &last_occurrence)) {
+                return last_occurrence;
+            }
+            return last_occurrence;
+        }
+
+        // Search for the character in the word
+        _search_char_in_word(wp, c, &last_occurrence);
+        ++wp;
+    }
+}
+
+/**
+ * @brief Finds the first occurrence of a substring in a string.
+ *
+ * This function searches for the first occurrence of the substring `needle`
+ * in the string `haystack`. If `needle` is an empty string, it returns a
+ * pointer to `haystack`.
+ *
+ * @param[in] haystack Pointer to the null-terminated string to search in.
+ * @param[in] needle Pointer to the null-terminated substring to find.
+ *
+ * @return A pointer to the first occurrence of `needle` in `haystack`, or
+ * `NULL` if the substring is not found.
+ */
+char *gb_strstr(const char *haystack, const char *needle) {
+    if (!haystack || !needle) {
+        return NULL;
+    }
+
+    // Empty needle matches the beginning of haystack
+    if (*needle == 0) {
+        return (char *)haystack;
+    }
+
+    // Empty haystack cannot contain non-empty needle
+    if (*haystack == 0) {
+        return NULL;
+    }
+
+    // Use optimized length calculation
+    size_t needle_len   = gb_strlen(needle);
+    size_t haystack_len = gb_strlen(haystack);
+
+    // If needle is longer than haystack, it cannot be found
+    if (needle_len > haystack_len) {
+        return NULL;
+    }
+
+    // Use optimized search for single character needle
+    if (needle_len == 1) {
+        return gb_strchr(haystack, *needle);
+    }
+
+    // Use word-aligned search for longer needles
+    return _find_substring_aligned(haystack, needle, needle_len);
 }
 
 /**
