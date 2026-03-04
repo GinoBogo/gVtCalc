@@ -1230,10 +1230,17 @@ size_t gb_strlen(const char *str) {
     while (1) {
         if (GB_HAS_ZERO(*wp)) {
             // clang-format off
+#if GB_BIG_ENDIAN
+            if (!(*wp & 0xFF000000)) { return ((uintptr_t)wp + 0 - ((uintptr_t)vs)); }
+            if (!(*wp & 0x00FF0000)) { return ((uintptr_t)wp + 1 - ((uintptr_t)vs)); }
+            if (!(*wp & 0x0000FF00)) { return ((uintptr_t)wp + 2 - ((uintptr_t)vs)); }
+            if (!(*wp & 0x000000FF)) { return ((uintptr_t)wp + 3 - ((uintptr_t)vs)); }
+#else
             if (!(*wp & 0x000000FF)) { return ((uintptr_t)wp + 0 - ((uintptr_t)vs)); }
             if (!(*wp & 0x0000FF00)) { return ((uintptr_t)wp + 1 - ((uintptr_t)vs)); }
             if (!(*wp & 0x00FF0000)) { return ((uintptr_t)wp + 2 - ((uintptr_t)vs)); }
             if (!(*wp & 0xFF000000)) { return ((uintptr_t)wp + 3 - ((uintptr_t)vs)); }
+#endif
             // clang-format on
         }
         ++wp;
