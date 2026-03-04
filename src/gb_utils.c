@@ -885,7 +885,7 @@ char *gb_strcpy(char *dst, const char *src) {
     uint32_t       *wp1 = (uint32_t *)vp1;
     const uint32_t *wp2 = (const uint32_t *)vp2;
 
-    while (!GB_HAS_ZERO(*wp1) && !GB_HAS_ZERO(*wp2)) {
+    while (!GB_HAS_ZERO(*wp2)) {
         *wp1 = *wp2;
 
         ++wp1;
@@ -946,7 +946,7 @@ char *gb_strncpy(char *dst, const char *src, size_t n) {
     uint32_t       *wp1 = (uint32_t *)vp1;
     const uint32_t *wp2 = (const uint32_t *)vp2;
 
-    while ((n >= sizeof(uint32_t)) && !GB_HAS_ZERO(*wp1) && !GB_HAS_ZERO(*wp2)) {
+    while ((n >= sizeof(uint32_t)) && !GB_HAS_ZERO(*wp2)) {
         *wp1 = *wp2;
 
         ++wp1;
@@ -957,11 +957,12 @@ char *gb_strncpy(char *dst, const char *src, size_t n) {
     ptr = (char *)wp1;
     src = (const char *)wp2;
 
-    while (*src) {
+    while ((n > 0) && *src) {
         *ptr = *src;
 
         ++ptr;
         ++src;
+        --n;
     }
 
     *ptr = '\0';
@@ -1314,7 +1315,7 @@ bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len) {
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool _unsafe_dec2bin(size_t num, char *dst_bin, size_t dst_len) {
+static bool _unsafe_dec2bin(size_t num, char *dst_bin, size_t dst_len) {
 #if SIZE_MAX == 0xFFFFFFFFUL
     int bits = (num) ? 32 - __builtin_clz(num) : 1;
 #else
