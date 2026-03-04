@@ -1107,7 +1107,7 @@ size_t gb_strcspn(const char *str, const char *reject) {
     }
 
     // Create lookup table for O(1) character checking
-    static bool lookup[256];
+    bool lookup[256];
     for (int i = 0; i < 256; ++i) {
         lookup[i] = false;
     }
@@ -1165,28 +1165,18 @@ char *gb_strtok_r(char *str, const char *delim, char **saveptr) {
         return NULL;
     }
 
-    // Persistent lookup table for delimiter characters
-    static bool is_delim[256];
-    static char last_delims[32]   = {0};
-    static bool table_initialized = false;
+    // Lookup table for delimiter characters
+    bool is_delim[256];
 
-    // Only rebuild table if delimiters changed
-    if (!table_initialized || gb_strcmp(last_delims, delim) != 0) {
-        // Initialize lookup table
-        for (int i = 0; i < 256; ++i) {
-            is_delim[i] = false;
-        }
+    // Initialize lookup table
+    for (int i = 0; i < 256; ++i) {
+        is_delim[i] = false;
+    }
 
-        const char *d = delim;
-        while (*d) {
-            is_delim[(unsigned char)*d] = true;
-            ++d;
-        }
-
-        // Save current delimiters for next comparison
-        gb_strncpy(last_delims, delim, sizeof(last_delims) - 1);
-        last_delims[sizeof(last_delims) - 1] = '\0';
-        table_initialized                    = true;
+    const char *d = delim;
+    while (*d) {
+        is_delim[(unsigned char)*d] = true;
+        ++d;
     }
 
     // Skip leading delimiters

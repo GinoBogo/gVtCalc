@@ -42,6 +42,12 @@ A lightweight utility library providing optimized string manipulation, memory ma
 *   Lookup tables for O(1) character checking
 *   Zero-detection using bit manipulation
 
+**Endianness Detection:**
+*   `GB_BIG_ENDIAN`: Macro that is `1` for big-endian systems and `0` for little-endian.
+*   Performs compile-time detection using `__BYTE_ORDER__`.
+*   Includes a runtime fallback mechanism for portability.
+*   Ensures that endianness-sensitive optimizations like `GB_HAS_ZERO` work correctly across different architectures.
+
 ### Performance Analysis
 
 The gb_utils library is highly optimized for performance-critical embedded systems, achieving significant speed improvements through multiple advanced techniques:
