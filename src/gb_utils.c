@@ -20,6 +20,24 @@
 #include <stdio.h>  // size_t, snprintf
 #include <stdlib.h> // NULL, strtoul
 
+// Compile-time checks for portability
+#if !defined(UINT32_MAX) || (UINT32_MAX != 0xFFFFFFFFU)
+#error "This code requires a proper 32-bit unsigned integer type"
+#endif
+
+#if !defined(UINTPTR_MAX) || (UINTPTR_MAX < 0xFFFFFFFFU)
+#error "This code requires at least 32-bit pointers"
+#endif
+
+// Safe alignment constants
+#define BYTES_PER_UINT32 4
+#define ALIGNMENT_MASK   3
+#define BYTES_PER_WORD   sizeof(uint32_t)
+
+// Compile-time verification (C99 compatible)
+typedef char verify_uint32_size[BYTES_PER_UINT32 == sizeof(uint32_t) ? 1 : -1];
+typedef char verify_word_size[BYTES_PER_WORD == 4 ? 1 : -1];
+
 /*
          HIGHER ADDRESS
     ┌──────────────────────┐
@@ -433,7 +451,7 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
     size_t i = 0;
 
     // Handle initial alignment to 4-byte boundary for both source and destination
-    size_t align = (4 - ((uintptr_t)_dst & 3)) & 3;
+    size_t align = (BYTES_PER_UINT32 - ((uintptr_t)_dst & ALIGNMENT_MASK)) & ALIGNMENT_MASK;
     if (align > len) {
         align = len;
     }
@@ -443,7 +461,7 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
 
     // Copy 4 bytes at a time using Duff's device for maximum efficiency
     // Note: Both dst_aligned and src_aligned are guaranteed to be 4-byte aligned
-    size_t      len32       = (len - i) / 4;
+    size_t      len32       = (len - i) / BYTES_PER_UINT32;
     char       *dst_aligned = _dst + i;
     const char *src_aligned = _src + i;
 
@@ -457,36 +475,36 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
             case 0:
                 do {
                     *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                    dst_aligned += 4;
-                    src_aligned += 4;
+                    dst_aligned += BYTES_PER_UINT32;
+                    src_aligned += BYTES_PER_UINT32;
                     case 7:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                     case 6:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                     case 5:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                     case 4:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                     case 3:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                     case 2:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                     case 1:
                         *(uint32_t *)dst_aligned = *(const uint32_t *)src_aligned;
-                        dst_aligned += 4;
-                        src_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
+                        src_aligned += BYTES_PER_UINT32;
                 } while (--n > 0);
             default:
                 break;
@@ -496,7 +514,7 @@ void *gb_memcpy(void *dst, const void *src, size_t len) {
 #pragma GCC diagnostic pop
 
     // Handle remaining bytes
-    i += len32 * 4;
+    i += len32 * BYTES_PER_UINT32;
     for (; i < len; i++) {
         _dst[i] = _src[i];
     }
@@ -534,7 +552,7 @@ void *gb_memset(void *dst, int val, size_t len) {
     size_t i = 0;
 
     // Handle initial alignment to 4-byte boundary
-    size_t align = (4 - ((uintptr_t)_dst & 3)) & 3;
+    size_t align = (BYTES_PER_UINT32 - ((uintptr_t)_dst & ALIGNMENT_MASK)) & ALIGNMENT_MASK;
     if (align > len) {
         align = len;
     }
@@ -545,7 +563,7 @@ void *gb_memset(void *dst, int val, size_t len) {
     // Set 4 bytes at a time using Duff's device for maximum efficiency
     // Note: dst_aligned is guaranteed to be 4-byte aligned by the alignment loop above
     uint32_t val32       = (uint32_t)(unsigned char)val * 0x01010101UL;
-    size_t   len32       = (len - i) / 4;
+    size_t   len32       = (len - i) / BYTES_PER_UINT32;
     char    *dst_aligned = _dst + i;
 
 #pragma GCC diagnostic push
@@ -558,28 +576,28 @@ void *gb_memset(void *dst, int val, size_t len) {
             case 0:
                 do {
                     *(uint32_t *)dst_aligned = val32;
-                    dst_aligned += 4;
+                    dst_aligned += BYTES_PER_UINT32;
                     case 7:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 6:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 5:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 4:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 3:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 2:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 1:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                 } while (--n > 0);
             default:
                 break;
@@ -589,7 +607,7 @@ void *gb_memset(void *dst, int val, size_t len) {
 #pragma GCC diagnostic pop
 
     // Handle remaining bytes
-    i += len32 * 4;
+    i += len32 * BYTES_PER_UINT32;
     for (; i < len; i++) {
         _dst[i] = (char)val;
     }
@@ -621,7 +639,7 @@ void gb_bzero(void *dst, size_t len) {
     size_t i = 0;
 
     // Handle initial alignment to 4-byte boundary
-    size_t align = (4 - ((uintptr_t)_dst & 3)) & 3;
+    size_t align = (BYTES_PER_UINT32 - ((uintptr_t)_dst & ALIGNMENT_MASK)) & ALIGNMENT_MASK;
     if (align > len) {
         align = len;
     }
@@ -632,7 +650,7 @@ void gb_bzero(void *dst, size_t len) {
     // Set 4 bytes at a time using Duff's device for maximum efficiency
     // Note: dst_aligned is guaranteed to be 4-byte aligned by the alignment loop above
     uint32_t val32       = 0;
-    size_t   len32       = (len - i) / 4;
+    size_t   len32       = (len - i) / BYTES_PER_UINT32;
     char    *dst_aligned = _dst + i;
 
 #pragma GCC diagnostic push
@@ -645,28 +663,28 @@ void gb_bzero(void *dst, size_t len) {
             case 0:
                 do {
                     *(uint32_t *)dst_aligned = val32;
-                    dst_aligned += 4;
+                    dst_aligned += BYTES_PER_UINT32;
                     case 7:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 6:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 5:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 4:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 3:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 2:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                     case 1:
                         *(uint32_t *)dst_aligned = val32;
-                        dst_aligned += 4;
+                        dst_aligned += BYTES_PER_UINT32;
                 } while (--n > 0);
             default:
                 break;
@@ -676,7 +694,7 @@ void gb_bzero(void *dst, size_t len) {
 #pragma GCC diagnostic pop
 
     // Handle remaining bytes
-    i += len32 * 4;
+    i += len32 * BYTES_PER_UINT32;
     for (; i < len; i++) {
         _dst[i] = 0;
     }

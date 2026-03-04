@@ -448,7 +448,25 @@
 #define GB_MOD_INC(x, y) ((x) = ((x) + 1) % (y))
 #define GB_MOD_DEC(x, y) ((x) = ((x) - 1 + (y)) % (y))
 
+// Endianness-aware zero detection
+// Use standard endianness detection or fallback to runtime check
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && defined(__ORDER_BIG_ENDIAN__)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define GB_BIG_ENDIAN 1
+#else
+#define GB_BIG_ENDIAN 0
+#endif
+#else
+// Runtime detection fallback
+static const uint32_t gb_endian_test = 0x01020304;
+#define GB_BIG_ENDIAN (*((const unsigned char *)&gb_endian_test) == 0x01)
+#endif
+
+#if GB_BIG_ENDIAN
+#define GB_HAS_ZERO(x) (((x) - 0x01010101U) & ~(x) & 0x01010101U)
+#else
 #define GB_HAS_ZERO(x) (((x) - 0x01010101U) & ~(x) & 0x80808080U)
+#endif
 
 #define GB_IS_POWER_OF_2(x) ((x) > 0 && ((x) & ((x) - 1)) == 0)
 
