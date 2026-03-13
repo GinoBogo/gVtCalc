@@ -30,11 +30,13 @@
 // *****************************************************************************
 // *****************************************************************************
 
+#define MAX_LIFO_DEPTH 32
+
 typedef struct {
     const char *expr;
-    double      num_lifo[32];
+    double      num_lifo[MAX_LIFO_DEPTH];
     int         num_top;
-    char        op__lifo[32];
+    char        op__lifo[MAX_LIFO_DEPTH];
     int         op__top;
     int         i;
 } calc_context_t;
@@ -54,18 +56,27 @@ static bool _apply_unary_op(calc_context_t *ctx, double num) {
 
         switch (op) {
             case '-': {
+                if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+                    return false;
+                }
                 ctx->num_lifo[++ctx->num_top] = -num;
                 ctx->op__top--;
                 result = true;
             } break;
 
             case '!': {
+                if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+                    return false;
+                }
                 ctx->num_lifo[++ctx->num_top] = !(int)num;
                 ctx->op__top--;
                 result = true;
             } break;
 
             case '~': {
+                if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+                    return false;
+                }
                 ctx->num_lifo[++ctx->num_top] = ~((int)num);
                 ctx->op__top--;
                 result = true;
@@ -84,6 +95,9 @@ static bool _apply_unary_func(calc_context_t *ctx, double num) {
     bool result = false;
 
     if (ctx->op__top >= 0) {
+        if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+            return false;
+        }
         switch (ctx->op__lifo[ctx->op__top]) {
             case 's': { // sin
                 ctx->num_lifo[++ctx->num_top] = sin(num);
@@ -242,6 +256,10 @@ static bool _apply_operator(calc_context_t *ctx) {
     double a  = ctx->num_lifo[ctx->num_top--];
     char   op = ctx->op__lifo[ctx->op__top--]; // NOSONAR (negative offset)
 
+    if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+        fprintf(stderr, "Error: Stack overflow\n");
+        return false;
+    }
     ctx->num_lifo[++ctx->num_top] = _apply_binary_op(a, b, op);
 
     return true;
@@ -302,9 +320,15 @@ static bool _process_binary(calc_context_t *ctx) {
         double a  = ctx->num_lifo[ctx->num_top--];
         char   op = ctx->op__lifo[ctx->op__top--];
 
+        if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+            return false;
+        }
         ctx->num_lifo[++ctx->num_top] = _apply_binary_op(a, b, op);
     }
 
+    if (ctx->op__top >= MAX_LIFO_DEPTH - 1) {
+        return false;
+    }
     ctx->op__lifo[++ctx->op__top] = ch;
     ctx->i++;
 
@@ -350,6 +374,9 @@ static bool _process_open_paren(calc_context_t *ctx) {
         return false;
     }
 
+    if (ctx->op__top >= MAX_LIFO_DEPTH - 1) {
+        return false;
+    }
     ctx->op__lifo[++ctx->op__top] = ch;
     ctx->i++;
     return true;
@@ -357,6 +384,10 @@ static bool _process_open_paren(calc_context_t *ctx) {
 
 static bool _process_function(calc_context_t *ctx) {
     const char *cp = &ctx->expr[ctx->i];
+
+    if (ctx->op__top >= MAX_LIFO_DEPTH - 1) {
+        return false;
+    }
 
     if (gb_strncmp(cp, "sin", 3) == 0) {
         ctx->op__lifo[++ctx->op__top] = 's';
@@ -430,6 +461,9 @@ static bool _process_number(calc_context_t *ctx) {
         double num = strtod(cp, &ep);
 
         if (!_apply_unary_op(ctx, num)) {
+            if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+                return false;
+            }
             ctx->num_lifo[++ctx->num_top] = num;
         }
 
@@ -446,6 +480,9 @@ static bool _process_constant(calc_context_t *ctx) {
 
     if (gb_strncmp(cp, "pi", 2) == 0) {
         if (!_apply_unary_op(ctx, M_PI)) {
+            if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+                return false;
+            }
             ctx->num_lifo[++ctx->num_top] = M_PI;
         }
 
@@ -455,6 +492,9 @@ static bool _process_constant(calc_context_t *ctx) {
 
     if ((ch == 'e') && (gb_strncmp(cp, "exp", 3) != 0)) {
         if (!_apply_unary_op(ctx, M_E)) {
+            if (ctx->num_top >= MAX_LIFO_DEPTH - 1) {
+                return false;
+            }
             ctx->num_lifo[++ctx->num_top] = M_E;
         }
 
@@ -499,6 +539,9 @@ static bool _process_unary(calc_context_t *ctx) {
 
         if ((ch == '!') || (ch == '-') || (ch == '~')) {
             // Push unary operator (extended ID)
+            if (ctx->op__top >= MAX_LIFO_DEPTH - 1) {
+                return false;
+            }
             ctx->op__lifo[++ctx->op__top] = (char)(ch + 128);
             ctx->i++;
             return true;
