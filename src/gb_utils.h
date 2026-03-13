@@ -39,11 +39,12 @@
 #define OPTIMIZE_RAM  __attribute__((ramfunc))
 
 // MASK-HELPER macros
-#define SHIFT_U8(b, s) ((uint8_t)(b) << s)
+#define SHIFT_U8(b, s) ((uint8_t)(b) << (s))
 
-#define MASK_FROM_2_BOOL(b2, b1)         (SHIFT_U8(b1, 0) | SHIFT_U8(b2, 1))
-#define MASK_FROM_3_BOOL(b3, b2, b1)     (SHIFT_U8(b1, 0) | SHIFT_U8(b2, 1) | SHIFT_U8(b3, 2))
-#define MASK_FROM_4_BOOL(b4, b3, b2, b1) (SHIFT_U8(b1, 0) | SHIFT_U8(b2, 1) | SHIFT_U8(b3, 2) | SHIFT_U8(b4, 3))
+#define MASK_FROM_2_BOOL(b2, b1)     (SHIFT_U8((b1), 0) | SHIFT_U8((b2), 1))
+#define MASK_FROM_3_BOOL(b3, b2, b1) (SHIFT_U8((b1), 0) | SHIFT_U8((b2), 1) | SHIFT_U8((b3), 2))
+#define MASK_FROM_4_BOOL(b4, b3, b2, b1) \
+    (SHIFT_U8((b1), 0) | SHIFT_U8((b2), 1) | SHIFT_U8((b3), 2) | SHIFT_U8((b4), 3))
 
 #undef SHIFT_U8
 
@@ -328,7 +329,7 @@
 #define B2H_(bits) B_##bits
 #define B2H(bits)  B2H_(bits)
 #define CON_(a, b) a##b
-#define CON(a, b)  CON_(a, b)
+#define CON(a, b)  CON_(a, b) // NOLINT(bugprone-macro-parentheses)
 #define HEX_(n)    0x##n
 #define HEX(n)     HEX_(n)
 
@@ -364,19 +365,53 @@
 // clang-format on
 
 #define BY_VAL(x) (uint32_t)(x)
-#define BY_REF(x) *((uint32_t *)&(x))
+
+// _gb_read_u32 / _gb_write_u32: type-safe 32-bit load/store via union.
+//
+// Reading through a union member other than the one last written is
+// explicitly defined behaviour in C99 §6.5.2.3 and C11 §6.5.2.3 — unlike
+// C++. The compiler reduces both functions to a single load/store instruction
+// on every supported target. This avoids both the strict aliasing UB of
+// *((uint32_t *)&x) and any dependency on <string.h> memcpy.
+typedef union {
+    uint32_t      u;
+    unsigned char b[sizeof(uint32_t)];
+} _gb_u32_pun_t;
+
+static inline uint32_t _gb_read_u32(const void *p) {
+    _gb_u32_pun_t v;
+    v.b[0] = ((const unsigned char *)(p))[0];
+    v.b[1] = ((const unsigned char *)(p))[1];
+    v.b[2] = ((const unsigned char *)(p))[2];
+    v.b[3] = ((const unsigned char *)(p))[3];
+    return v.u;
+}
+
+static inline void _gb_write_u32(void *p, uint32_t val) {
+    _gb_u32_pun_t v;
+    v.u                       = val;
+    ((unsigned char *)(p))[0] = v.b[0];
+    ((unsigned char *)(p))[1] = v.b[1];
+    ((unsigned char *)(p))[2] = v.b[2];
+    ((unsigned char *)(p))[3] = v.b[3];
+}
 
 #define SET_MASK(mask_bit, mask_pos) (BY_VAL(mask_bit) << BY_VAL(mask_pos))
-#define NOT_MASK(mask_bit, mask_pos) (~SET_MASK(mask_bit, mask_pos))
+#define NOT_MASK(mask_bit, mask_pos) (~SET_MASK((mask_bit), (mask_pos)))
 
 #define SHL_BITS(val, mask_bit, mask_pos) ((BY_VAL(val) & BY_VAL(mask_bit)) << BY_VAL(mask_pos))
 #define SHR_BITS(val, mask_bit, mask_pos) ((BY_VAL(val) >> BY_VAL(mask_pos)) & BY_VAL(mask_bit))
 
-#define SET_BITS(dst, mask_bit, mask_pos) BY_REF(dst) = (BY_REF(dst) | SET_MASK(mask_bit, mask_pos))
-#define CLS_BITS(dst, mask_bit, mask_pos) BY_REF(dst) = (BY_REF(dst) & NOT_MASK(mask_bit, mask_pos))
+#define SET_BITS(dst, mask_bit, mask_pos) \
+    _gb_write_u32(&(dst), _gb_read_u32(&(dst)) | SET_MASK((mask_bit), (mask_pos)))
+#define CLS_BITS(dst, mask_bit, mask_pos) \
+    _gb_write_u32(&(dst), _gb_read_u32(&(dst)) & NOT_MASK((mask_bit), (mask_pos)))
 
-#define READ_BITS(src, mask_bit, mask_pos)       SHR_BITS(src, mask_bit, mask_pos)
-#define WRITE_BITS(dst, mask_bit, mask_pos, val) CLS_BITS(dst, mask_bit, mask_pos) | SHL_BITS(val, mask_bit, mask_pos)
+#define READ_BITS(src, mask_bit, mask_pos) SHR_BITS((src), (mask_bit), (mask_pos))
+#define WRITE_BITS(dst, mask_bit, mask_pos, val) \
+    _gb_write_u32(                               \
+        &(dst),                                  \
+        (_gb_read_u32(&(dst)) & NOT_MASK((mask_bit), (mask_pos))) | SHL_BITS((val), (mask_bit), (mask_pos)))
 
 // MEMORY/BUFFER macros
 #define GB_ARRAY_32(x) ((uint32_t *)&(x))
@@ -403,22 +438,22 @@
         for (size_t i = 0; i < N; ++i) ((uint32_t *)(d))[i] = ((uint32_t *)(s))[i]; \
     }
 
-#define GB_SET_08(x, s)                                                   \
-    {                                                                     \
-        const size_t N = sizeof(x);                                       \
-        for (size_t i = 0; i < N; ++i) ((uint8_t *)&(x))[i] = (uint8_t)s; \
+#define GB_SET_08(x, s)                                                     \
+    {                                                                       \
+        const size_t N = sizeof(x);                                         \
+        for (size_t i = 0; i < N; ++i) ((uint8_t *)&(x))[i] = (uint8_t)(s); \
     }
 
-#define GB_SET_16(x, s)                                                     \
-    {                                                                       \
-        const size_t N = sizeof(x) / 2;                                     \
-        for (size_t i = 0; i < N; ++i) ((uint16_t *)&(x))[i] = (uint16_t)s; \
+#define GB_SET_16(x, s)                                                       \
+    {                                                                         \
+        const size_t N = sizeof(x) / 2;                                       \
+        for (size_t i = 0; i < N; ++i) ((uint16_t *)&(x))[i] = (uint16_t)(s); \
     }
 
-#define GB_SET_32(x, s)                                                     \
-    {                                                                       \
-        const size_t N = sizeof(x) / 4;                                     \
-        for (size_t i = 0; i < N; ++i) ((uint32_t *)&(x))[i] = (uint32_t)s; \
+#define GB_SET_32(x, s)                                                       \
+    {                                                                         \
+        const size_t N = sizeof(x) / 4;                                       \
+        for (size_t i = 0; i < N; ++i) ((uint32_t *)&(x))[i] = (uint32_t)(s); \
     }
 
 #define GB_ZEROS_08(x)                                           \
@@ -457,13 +492,71 @@
 #define GB_BIG_ENDIAN 0
 #endif
 #else
-// Runtime detection fallback
-static const uint32_t gb_endian_test = 0x01020304;
-#define GB_BIG_ENDIAN (*((const unsigned char *)&gb_endian_test) == 0x01)
+// Runtime detection fallback — evaluated once at file scope so the value
+// is available as a constant to the compiler's dead-code eliminator.
+// Using a function-call macro instead would re-evaluate on every expansion
+// in inlined hot-path code.
+static inline int _gb_detect_big_endian(void) {
+    union {
+        uint32_t      u;
+        unsigned char b[4];
+    } probe = {0x01000000UL};
+
+    return probe.b[0] == 1;
+}
+
+static const int GB_BIG_ENDIAN = _gb_detect_big_endian();
 #endif
 
-#if GB_BIG_ENDIAN
-#define GB_HAS_ZERO(x) (((x) - 0x01010101U) & ~(x) & 0x01010101U)
+// ---------------------------------------------------------------------------
+// Word-width selection
+//
+// On 32-bit targets (or when GB_FORCE_WORD32 is defined) gb_word_t is
+// uint32_t.  On 64-bit targets (or when GB_FORCE_WORD64 is defined)
+// gb_word_t is uint64_t, doubling the bytes processed per loop iteration
+// in all word-at-a-time hot paths (memcpy, memset, strlen, strchr, …).
+//
+// Override auto-detection from the build system:
+//   -DGB_FORCE_WORD32   always use 32-bit words (e.g. on a 64-bit host
+//                       cross-compiling for a 32-bit embedded target)
+//   -DGB_FORCE_WORD64   always use 64-bit words
+// ---------------------------------------------------------------------------
+#if defined(GB_FORCE_WORD32)
+typedef uint32_t gb_word_t;
+#define GB_WORD_BITS 32
+#elif defined(GB_FORCE_WORD64)
+typedef uint64_t gb_word_t;
+#define GB_WORD_BITS 64
+#elif UINTPTR_MAX == 0xFFFFFFFFUL
+typedef uint32_t gb_word_t;
+#define GB_WORD_BITS 32
+#else
+typedef uint64_t gb_word_t;
+#define GB_WORD_BITS 64
+#endif
+
+// Broadcast a single byte value into every byte lane of a gb_word_t.
+// e.g. 0xAB -> 0xABABABAB (32-bit) or 0xABABABABABABABAB (64-bit).
+// Used to build the cmask for word-at-a-time character searches.
+#if GB_WORD_BITS == 64
+#define GB_BROADCAST_BYTE(uc) ((gb_word_t)(unsigned char)(uc) * 0x0101010101010101ULL)
+#else
+#define GB_BROADCAST_BYTE(uc) ((gb_word_t)(unsigned char)(uc) * 0x01010101UL)
+#endif
+
+// GB_HAS_ZERO(x): detects whether any byte lane of word x is zero.
+//
+// Formula: ((x - 0x0101...01) & ~x & 0x8080...80)
+//   - subtracting 0x01 from a zero byte borrows into the high bit
+//   - masking with ~x excludes non-zero bytes that also have the high bit set
+//   - masking with 0x80...80 isolates the high bit of each lane
+//
+// Endianness is irrelevant here: the formula tests all byte lanes of the
+// word VALUE simultaneously and does not depend on byte order in memory.
+// (Endianness only matters for _zero_byte_offset, which identifies WHICH
+// byte is zero, not WHETHER any byte is zero.)
+#if GB_WORD_BITS == 64
+#define GB_HAS_ZERO(x) (((x) - 0x0101010101010101ULL) & ~(x) & 0x8080808080808080ULL)
 #else
 #define GB_HAS_ZERO(x) (((x) - 0x01010101U) & ~(x) & 0x80808080U)
 #endif
@@ -476,12 +569,14 @@ static const uint32_t gb_endian_test = 0x01020304;
 // *****************************************************************************
 // *****************************************************************************
 
+// --- Memory — raw ---------------------------------------------------------
+
 /**
  * @brief Copies a block of memory from source to destination.
  *
  * This function copies `len` bytes from the memory area pointed to by `src` to
- * the memory area pointed to by `dst`. It uses Duff's device to optimize the
- * copying of memory.
+ * the memory area pointed to by `dst`. It uses an 8-unrolled 32-bit word loop
+ * to optimize the copying of memory.
  *
  * @param[out] dst Pointer to the destination memory area.
  * @param[in] src Pointer to the source memory area.
@@ -489,14 +584,35 @@ static const uint32_t gb_endian_test = 0x01020304;
  *
  * @return A pointer to the destination memory area `dst`.
  */
-void *gb_memcpy(void *dst, const void *src, size_t len);
+void *gb_memcpy(void *restrict dst,       //
+                const void *restrict src, //
+                size_t len);
+
+/**
+ * @brief Moves a block of memory from source to destination, handling overlaps.
+ *
+ * This function copies `len` bytes from the memory area pointed to by `src` to
+ * the memory area pointed to by `dst`, correctly handling the case where the
+ * two regions overlap. A backward copy is used only when dst falls strictly
+ * inside [src, src+len); in all other cases a forward copy via gb_memcpy is
+ * performed.
+ *
+ * @param[out] dst Pointer to the destination memory area.
+ * @param[in] src Pointer to the source memory area.
+ * @param[in] len Number of bytes to move.
+ *
+ * @return A pointer to the destination memory area `dst`.
+ */
+void *gb_memmove(void       *dst, //
+                 const void *src, //
+                 size_t      len);
 
 /**
  * @brief Sets a block of memory to a specified value.
  *
  * This function sets the first `len` bytes of the memory area pointed to by
- * `dst` to the specified value `val`. It uses Duff's device to optimize the
- * setting of memory.
+ * `dst` to the specified value `val`. It uses an 8-unrolled 32-bit word loop
+ * to optimize the setting of memory.
  *
  * @param[out] dst Pointer to the memory area to be set.
  * @param[in] val The value to be set. The value is passed as an int, but the
@@ -506,63 +622,114 @@ void *gb_memcpy(void *dst, const void *src, size_t len);
  *
  * @return A pointer to the memory area `dst`.
  */
-void *gb_memset(void *dst, int val, size_t len);
+void *gb_memset(void  *dst, //
+                int    val, //
+                size_t len);
 
 /**
  * @brief Sets a block of memory to zero.
  *
- * This function sets the memory block pointed to by `dst` to zero, for a total
- * of `len` bytes. It uses a loop unrolling technique to optimize the process.
+ * Delegates to gb_memset(dst, 0, len) so that both functions share a single
+ * optimized implementation.
  *
  * @param[out] dst Pointer to the memory block to be zeroed.
  * @param[in] len Number of bytes to set to zero.
  */
-void gb_bzero(void *dst, size_t len);
+void gb_bzero(void  *dst, //
+              size_t len);
 
 /**
- * @brief Finds the first occurrence of a character in a string.
+ * @brief Searches a memory block for the first occurrence of a byte value.
  *
- * This function searches for the first occurrence of the character `c` in the
- * string `str`. If `c` is the null character '\0', it returns a pointer to the
- * terminating null character.
+ * @param[in] buf Pointer to the memory area to search.
+ * @param[in] c   Byte value to locate (passed as int, used as unsigned char).
+ * @param[in] len Number of bytes to search.
  *
- * @param[in] str Pointer to the null-terminated string to search.
- * @param[in] c The character to locate (passed as an int).
- *
- * @return A pointer to the first occurrence of `c` in `str`, or `NULL` if the
- * character is not found.
+ * @return A pointer to the first occurrence of `c` in the first `len` bytes
+ * of `buf`, or NULL if not found.
  */
-char *gb_strchr(const char *str, int c);
+void *gb_memchr(const void *buf, //
+                int         c,   //
+                size_t      len);
 
 /**
- * @brief Finds the last occurrence of a character in a string.
+ * @brief Searches a memory block for the last occurrence of a byte value.
  *
- * This function searches for the last occurrence of the character `c` in the
- * string `str`. If `c` is the null character '\0', it returns a pointer to the
- * terminating null character.
+ * Scans backwards from byte `len - 1` to byte 0.
  *
- * @param[in] str Pointer to the null-terminated string to search.
- * @param[in] c The character to locate (passed as an int).
+ * @param[in] buf Pointer to the memory area to search.
+ * @param[in] c   Byte value to locate (passed as int, used as unsigned char).
+ * @param[in] len Number of bytes to search.
  *
- * @return A pointer to the last occurrence of `c` in `str`, or `NULL` if the
- * character is not found.
+ * @return A pointer to the last occurrence of `c` in the first `len` bytes
+ * of `buf`, or NULL if not found.
  */
-char *gb_strrchr(const char *str, int c);
+void *gb_memrchr(const void *buf, //
+                 int         c,   //
+                 size_t      len);
+
+// --- Memory — allocation --------------------------------------------------
 
 /**
- * @brief Finds the first occurrence of a substring in a string.
+ * @brief Allocates an aligned block of memory.
  *
- * This function searches for the first occurrence of the substring `needle`
- * in the string `haystack`. If `needle` is an empty string, it returns a
- * pointer to `haystack`.
+ * Allocates `size` bytes with a start address that is a multiple of `align`.
+ * The alignment must be a non-zero power of two and at most 128; values
+ * smaller than `sizeof(void *)` are silently raised to that minimum.
  *
- * @param[in] haystack Pointer to the null-terminated string to search in.
- * @param[in] needle Pointer to the null-terminated substring to find.
+ * The 128-byte cap exists because the back-offset between the returned
+ * pointer and the raw `malloc` block is stored in a single `uint8_t`
+ * immediately before the payload. With align ≤ 128 the offset fits in
+ * [1, 128] with no wrapping; align = 256 would produce offset = 256,
+ * which wraps to 0 in a `uint8_t` and corrupts the heap in `gb_free`.
  *
- * @return A pointer to the first occurrence of `needle` in `haystack`, or
- * `NULL` if the substring is not found.
+ * @param[in] size  Number of bytes to allocate.
+ * @param[in] align Alignment in bytes (must be a power of two, ≤ 128).
+ *
+ * @return Pointer to the aligned memory block, or NULL on failure.
  */
-char *gb_strstr(const char *haystack, const char *needle);
+void *gb_malloc(size_t size, //
+                size_t align);
+
+/**
+ * @brief Frees a block allocated by gb_malloc.
+ *
+ * @warning Passing a pointer not obtained from `gb_malloc` is undefined
+ * behavior and will corrupt the heap. NULL is silently ignored.
+ *
+ * @param[in] ptr Pointer previously returned by gb_malloc, or NULL (no-op).
+ */
+void gb_free(void *ptr);
+
+// --- String — length ------------------------------------------------------
+
+/**
+ * @brief Calculates the length of a string.
+ *
+ * This function calculates the length of the null-terminated string `str`.
+ *
+ * @param[in] str Pointer to the string.
+ *
+ * @return The length of the string, excluding the null terminator.
+ */
+size_t gb_strlen(const char *str);
+
+/**
+ * @brief Calculates the length of a string, up to a maximum limit.
+ *
+ * Returns the length of `str`, but at most `maxlen`. If no null terminator is
+ * found within the first `maxlen` bytes, `maxlen` is returned.
+ *
+ * @param[in] str    Pointer to the string.
+ * @param[in] maxlen Maximum number of bytes to examine.
+ *
+ * @return The length of `str` if it is shorter than `maxlen`, otherwise
+ * `maxlen`.
+ */
+size_t gb_strnlen(const char *str, //
+                  size_t      maxlen);
+
+// --- String — copy / concat -----------------------------------------------
 
 /**
  * @brief Copies a string from source to destination.
@@ -580,7 +747,8 @@ char *gb_strstr(const char *haystack, const char *needle);
  *
  * @return A pointer to the destination buffer.
  */
-char *gb_strcpy(char *dst, const char *src);
+char *gb_strcpy(char *restrict dst, //
+                const char *restrict src);
 
 /**
  * @brief Copies up to `n` characters from a source string to a destination
@@ -598,36 +766,111 @@ char *gb_strcpy(char *dst, const char *src);
  *
  * @return A pointer to the destination buffer.
  */
-char *gb_strncpy(char *dst, const char *src, size_t n);
+char *gb_strncpy(char *restrict dst,       //
+                 const char *restrict src, //
+                 size_t n);
 
 /**
- * @brief Compares two strings lexicographically.
+ * @brief Copies a string to a destination buffer with size-bound and
+ * guaranteed null termination.
  *
- * This function compares the two null-terminated strings `str1` and `str2`.
+ * Copies at most `size - 1` characters from `src` to `dst`, always appending
+ * a null terminator if `size` is greater than zero.
  *
- * @param[in] str1 Pointer to the first string.
- * @param[in] str2 Pointer to the second string.
+ * @note Truncation occurred if the return value is >= `size`.
  *
- * @return An integer less than, equal to, or greater than zero if `str1` is
- * found, respectively, to be less than, to match, or be greater than `str2`.
+ * @param[out] dst  Pointer to the destination buffer.
+ * @param[in]  src  Pointer to the source string.
+ * @param[in]  size Total size of the destination buffer in bytes.
+ *
+ * @return The length of `src` (as if computed by gb_strlen), regardless of
+ * truncation.
  */
-int gb_strcmp(const char *str1, const char *str2);
+size_t gb_strlcpy(char *restrict dst,       //
+                  const char *restrict src, //
+                  size_t size);
 
 /**
- * @brief Compares up to `n` characters of two strings lexicographically.
+ * @brief Appends a string to a destination buffer with size-bound and
+ * guaranteed null termination.
  *
- * This function compares up to `n` characters of the two null-terminated
- * strings `str1` and `str2`.
+ * Appends characters from `src` to the null-terminated string in `dst`,
+ * ensuring the total length never exceeds `size - 1` characters.
  *
- * @param[in] str1 Pointer to the first string.
- * @param[in] str2 Pointer to the second string.
- * @param[in] n The maximum number of characters to compare.
+ * @note Truncation occurred if the return value is >= `size`.
  *
- * @return An integer less than, equal to, or greater than zero if the first `n`
- * bytes of `str1` is found, respectively, to be less than, to match, or be
- * greater than the first `n` bytes of `str2`.
+ * @param[in,out] dst  Pointer to the destination buffer (null-terminated).
+ * @param[in]     src  Pointer to the source string to append.
+ * @param[in]     size Total size of the destination buffer in bytes.
+ *
+ * @return gb_strlen(initial dst) + gb_strlen(src), regardless of truncation.
  */
-int gb_strncmp(const char *str1, const char *str2, size_t n);
+size_t gb_strlcat(char *restrict dst,       //
+                  const char *restrict src, //
+                  size_t size);
+
+/**
+ * @brief Duplicates a string into a newly allocated buffer.
+ *
+ * Allocates exactly gb_strlen(str) + 1 bytes, copies the string content, and
+ * appends the null terminator. The returned pointer must be freed by the caller.
+ *
+ * @param[in] str Pointer to the null-terminated string to duplicate.
+ *
+ * @return Pointer to the newly allocated duplicate string, or NULL if
+ * allocation fails or `str` is NULL.
+ */
+char *gb_strdup(const char *str);
+
+// --- String — search ------------------------------------------------------
+
+/**
+ * @brief Finds the first occurrence of a character in a string.
+ *
+ * This function searches for the first occurrence of the character `c` in the
+ * string `str`. If `c` is the null character '\0', it returns a pointer to the
+ * terminating null character.
+ *
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] c The character to locate (passed as an int).
+ *
+ * @return A pointer to the first occurrence of `c` in `str`, or `NULL` if the
+ * character is not found.
+ */
+char *gb_strchr(const char *str, //
+                int         c);
+
+/**
+ * @brief Finds the last occurrence of a character in a string.
+ *
+ * This function searches for the last occurrence of the character `c` in the
+ * string `str`. If `c` is the null character '\0', it returns a pointer to the
+ * terminating null character.
+ *
+ * @param[in] str Pointer to the null-terminated string to search.
+ * @param[in] c The character to locate (passed as an int).
+ *
+ * @return A pointer to the last occurrence of `c` in `str`, or `NULL` if the
+ * character is not found.
+ */
+char *gb_strrchr(const char *str, //
+                 int         c);
+
+/**
+ * @brief Finds the first occurrence of a substring in a string.
+ *
+ * This function searches for the first occurrence of the substring `needle`
+ * in the string `haystack`. If `needle` is an empty string, it returns a
+ * pointer to `haystack`.
+ *
+ * @param[in] haystack Pointer to the null-terminated string to search in.
+ * @param[in] needle Pointer to the null-terminated substring to find.
+ *
+ * @return A pointer to the first occurrence of `needle` in `haystack`, or
+ * `NULL` if the substring is not found.
+ */
+char *gb_strstr(const char *haystack, //
+                const char *needle);
 
 /**
  * @brief Finds the first occurrence of any character from a set of characters.
@@ -635,13 +878,17 @@ int gb_strncmp(const char *str1, const char *str2, size_t n);
  * This function scans the null-terminated string `str` for the first
  * occurrence of any character from the null-terminated string `reject`.
  *
+ * @note Returns 0 on NULL input. Standard strcspn has undefined behavior on
+ * NULL; this function returns 0 defensively in that case.
+ *
  * @param[in] str Pointer to the null-terminated string to search.
  * @param[in] reject Pointer to the null-terminated string containing characters to reject.
  *
  * @return The number of characters at the beginning of `str` that are not
  * in the `reject` string.
  */
-size_t gb_strcspn(const char *str, const char *reject);
+size_t gb_strcspn(const char *str, //
+                  const char *reject);
 
 /**
  * @brief Splits a string into tokens using delimiters.
@@ -658,18 +905,45 @@ size_t gb_strcspn(const char *str, const char *reject);
  *
  * @return Pointer to the next token, or NULL if no more tokens exist.
  */
-char *gb_strtok_r(char *str, const char *delim, char **saveptr);
+char *gb_strtok_r(char *restrict str,         //
+                  const char *restrict delim, //
+                  char **restrict saveptr);
+
+// --- String — compare -----------------------------------------------------
 
 /**
- * @brief Calculates the length of a string.
+ * @brief Compares two strings lexicographically.
  *
- * This function calculates the length of the null-terminated string `str`.
+ * This function compares the two null-terminated strings `str1` and `str2`.
  *
- * @param[in] str Pointer to the string.
+ * @param[in] str1 Pointer to the first string.
+ * @param[in] str2 Pointer to the second string.
  *
- * @return The length of the string, excluding the null terminator.
+ * @return An integer less than, equal to, or greater than zero if `str1` is
+ * found, respectively, to be less than, to match, or be greater than `str2`.
  */
-size_t gb_strlen(const char *str);
+int gb_strcmp(const char *str1, //
+              const char *str2);
+
+/**
+ * @brief Compares up to `n` characters of two strings lexicographically.
+ *
+ * This function compares up to `n` characters of the two null-terminated
+ * strings `str1` and `str2`.
+ *
+ * @param[in] str1 Pointer to the first string.
+ * @param[in] str2 Pointer to the second string.
+ * @param[in] n The maximum number of characters to compare.
+ *
+ * @return An integer less than, equal to, or greater than zero if the first `n`
+ * bytes of `str1` is found, respectively, to be less than, to match, or be
+ * greater than the first `n` bytes of `str2`.
+ */
+int gb_strncmp(const char *str1, //
+               const char *str2, //
+               size_t      n);
+
+// --- Conversion -----------------------------------------------------------
 
 /**
  * @brief Converts a binary string to a decimal string.
@@ -683,7 +957,9 @@ size_t gb_strlen(const char *str);
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len);
+bool gb_bin2dec(const char *restrict src_bin, //
+                char *restrict dst_dec,       //
+                size_t dst_len);
 
 /**
  * @brief Converts a binary string to a hexadecimal string.
@@ -697,7 +973,9 @@ bool gb_bin2dec(const char *src_bin, char *dst_dec, size_t dst_len);
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len);
+bool gb_bin2hex(const char *restrict src_bin, //
+                char *restrict dst_hex,       //
+                size_t dst_len);
 
 /**
  * @brief Converts a decimal string to a binary string.
@@ -712,7 +990,9 @@ bool gb_bin2hex(const char *src_bin, char *dst_hex, size_t dst_len);
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len);
+bool gb_dec2bin(const char *restrict src_dec, //
+                char *restrict dst_bin,       //
+                size_t dst_len);
 
 /**
  * @brief Converts a decimal string to a hexadecimal string.
@@ -727,7 +1007,9 @@ bool gb_dec2bin(const char *src_dec, char *dst_bin, size_t dst_len);
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len);
+bool gb_dec2hex(const char *restrict src_dec, //
+                char *restrict dst_hex,       //
+                size_t dst_len);
 
 /**
  * @brief Converts a hexadecimal string to a binary string.
@@ -742,7 +1024,9 @@ bool gb_dec2hex(const char *src_dec, char *dst_hex, size_t dst_len);
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len);
+bool gb_hex2bin(const char *restrict src_hex, //
+                char *restrict dst_bin,       //
+                size_t dst_len);
 
 /**
  * @brief Converts a hexadecimal string to a decimal string.
@@ -756,51 +1040,54 @@ bool gb_hex2bin(const char *src_hex, char *dst_bin, size_t dst_len);
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_hex2dec(const char *src_hex, char *dst_dec, size_t dst_len);
+bool gb_hex2dec(const char *restrict src_hex, //
+                char *restrict dst_dec,       //
+                size_t dst_len);
 
 /**
- * @brief Converts a binary data buffer to its hexadecimal string
+ * @brief Converts a raw binary byte buffer to its hexadecimal string
  * representation.
  *
  * This function takes a buffer of raw bytes and converts it into a
  * null-terminated string of hexadecimal characters. Each byte in the source
  * buffer is represented by two characters in the destination string.
  *
- * @param[in] src_hex Pointer to the source buffer containing the binary data.
+ * @param[in] src_buf Pointer to the source buffer containing the raw binary data.
  * @param[in] src_len The number of bytes in the source buffer to convert.
  * @param[out] dst_str Pointer to the destination buffer where the resulting
  * hexadecimal string will be stored.
- * @param[in] dst_len The size of the destination buffer in bytes. This must be
- * at least (src_len * 2) + 1 to accommodate the full hexadecimal string and the
- * null terminator.
+ * @param[in] dst_len The size of the destination buffer in bytes. Must be at
+ * least (src_len * 2) + 1 to accommodate the full string and the null terminator.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-
-bool gb_hex2str(const char *src_hex, size_t src_len, char *dst_str, size_t dst_len);
+bool gb_hex2str(const char *restrict src_buf, //
+                size_t src_len,               //
+                char *restrict dst_str,       //
+                size_t dst_len);
 
 /**
- * @brief Converts a binary data buffer to its hexadecimal string
+ * @brief Converts a raw binary byte buffer to its hexadecimal string
  * representation, with byte reversal.
  *
- * This function reads a hexadecimal string and converts it into a raw byte
- * buffer. It processes the input string from right to left, two characters (one
- * byte) at a time. This results in a byte-reversed (endian-swapped) output
- * buffer.
+ * Same nibble-splitting algorithm as gb_hex2str, but bytes are read from
+ * last to first, producing a byte-reversed (endian-swapped) output string.
  *
- * For example, the input string "1A2B3C" would be processed as "3C", then "2B",
- * then "1A", resulting in the output byte buffer {0x3C, 0x2B, 0x1A}.
+ * For example, the input buffer {0x1A, 0x2B, 0x3C} yields "3C2B1A".
  *
- * @param[in] src_str Pointer to the null-terminated source string of
- * hexadecimal characters. The length of this string must be an even number.
- * @param[out] dst_hex Pointer to the destination buffer where the resulting
- * binary data will be stored.
- * @param[in] dst_len The size of the destination buffer in bytes. This must be
- * at least half the length of the source string.
+ * @param[in] src_buf Pointer to the source buffer containing the raw binary data.
+ * @param[in] src_len The number of bytes in the source buffer to convert.
+ * @param[out] dst_str Pointer to the destination buffer where the resulting
+ * hexadecimal string will be stored.
+ * @param[in] dst_len The size of the destination buffer in bytes. Must be at
+ * least (src_len * 2) + 1 to accommodate the full string and the null terminator.
  *
  * @return `true` if the conversion was successful, `false` otherwise.
  */
-bool gb_hex2str_r(const char *src_hex, size_t src_len, char *dst_str, size_t dst_len);
+bool gb_hex2str_r(const char *restrict src_buf, //
+                  size_t src_len,               //
+                  char *restrict dst_str,       //
+                  size_t dst_len);
 
 #endif // GB_UTILS_H
 
