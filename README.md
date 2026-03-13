@@ -10,9 +10,14 @@ A lightweight, terminal-based calculator that I wrote in C, which I usually use 
 A lightweight utility library providing optimized string manipulation, memory management, and number conversion functions.
 
 **Memory Functions:**
-*   `gb_memcpy()`: Optimized memory copy using Duff's device
-*   `gb_memset()`: Optimized memory set using Duff's device  
+*   `gb_malloc()`: Allocate aligned memory
+*   `gb_free()`: Free aligned memory
+*   `gb_memcpy()`: Optimized memory copy using loop unrolling
+*   `gb_memmove()`: Move memory block handling overlaps
+*   `gb_memset()`: Optimized memory set using loop unrolling  
 *   `gb_bzero()`: Fast memory zeroing with loop unrolling
+*   `gb_memchr()`: Find first occurrence of byte in memory block
+*   `gb_memrchr()`: Find last occurrence of byte in memory block
 
 **String Functions:**
 *   `gb_strchr()`: Find first occurrence of character in string
@@ -20,11 +25,15 @@ A lightweight utility library providing optimized string manipulation, memory ma
 *   `gb_strstr()`: Find first occurrence of substring in string
 *   `gb_strcpy()`: Optimized string copy with word-aligned operations
 *   `gb_strncpy()`: Safe string copy with size limit and null termination
+*   `gb_strlcpy()`: Size-bounded string copy with guaranteed null termination
+*   `gb_strlcat()`: Size-bounded string concatenation with guaranteed null termination
+*   `gb_strdup()`: Duplicate a string into new memory
 *   `gb_strcmp()`: Optimized string comparison with word-aligned operations
 *   `gb_strncmp()`: Compare up to n characters with optimization
 *   `gb_strcspn()`: Span until character from set
-*   `gb_strtok_r()`: Thread-safe string tokenization with word-aligned optimization
+*   `gb_strtok_r()`: Thread-safe string tokenization using lookup tables
 *   `gb_strlen()`: Fast string length calculation with word alignment
+*   `gb_strnlen()`: String length with maximum limit
 
 **Number Conversion Functions:**
 *   `gb_bin2dec()`: Convert binary string to decimal
@@ -38,7 +47,7 @@ A lightweight utility library providing optimized string manipulation, memory ma
 
 **Optimizations:**
 *   Word-aligned memory operations for improved performance
-*   Duff's device for loop unrolling
+*   Loop unrolling for improved throughput
 *   Lookup tables for O(1) character checking
 *   Zero-detection using bit manipulation
 
@@ -54,25 +63,36 @@ The gb_utils library is highly optimized for performance-critical embedded syste
 
 #### Core Optimization Techniques
 
-**Duff's Device Implementation**
+**Loop Unrolling**
 - Used in `gb_memcpy()`, `gb_memset()`, `gb_bzero()`
-- Loop unrolling with 8 operations per iteration (32 bytes total)
+- Uses `#pragma GCC unroll 8` to unroll word-sized operations.
+- Processes 8 words per iteration (32 bytes on 32-bit systems, 64 bytes on 64-bit systems).
 - 25-40% faster than naive byte-by-byte loops
 
 **Word-Aligned Memory Operations**
 - Used in `gb_strchr()`, `gb_strrchr()`, `gb_strstr()`, `gb_strcpy()`, `gb_strcmp()`, `gb_strlen()`
-- Processes 32-bit words instead of individual bytes
-- ~4x speedup for aligned strings
+- Processes `gb_word_t` chunks (32 or 64 bits) instead of individual bytes.
+- ~4-8x speedup for aligned strings, depending on word size.
 
 **Zero-Detection Using Bit Manipulation**
 - `GB_HAS_ZERO(x)` macro for efficient null detection
-- Detects zero bytes in parallel across 4-byte word
-- Eliminates sequential byte checking
+- Detects if any byte in a word is zero using a branchless bitmask test.
+- Eliminates sequential byte checking, significantly speeding up string scans.
 
 **Lookup Tables for O(1) Operations**
 - Used in `gb_strtok_r()`, `gb_strcspn()`
-- 256-entry boolean lookup table for character classification
-- Eliminates linear search through delimiter strings
+- A 256-entry lookup table provides O(1) character classification.
+- Avoids linear scans through delimiter strings on each character check.
+
+**Fast Substring Search**
+- Used in `gb_strstr()`
+- Leverages the optimized `gb_strchr()` to quickly skip to candidate positions for the start of the needle.
+- Avoids a slow byte-by-byte scan of the haystack.
+
+**Logarithmic Bit Counting**
+- Used in `gb_dec2bin()` and `gb_hex2bin()` via the `_count_sig_bits()` helper.
+- Employs a binary-halving scan to count significant bits in O(log n) time.
+- Produces branchless code on modern compilers for efficient number-to-string conversion padding.
 
 #### Performance Benchmarks
 
@@ -87,7 +107,7 @@ Modern standard libraries (glibc, musl, etc.) are highly optimized, so gb_utils 
 - **No CPU feature detection overhead** - Standard libraries may dispatch to different implementations based on CPU features
 - **Embedded-friendly** - Designed for systems without advanced CPU instructions (SIMD, AVX)
 
-**Duff's Device Functions (`gb_memcpy`, `gb_memset`, `gb_bzero`)**
+**Loop Unrolling Functions (`gb_memcpy`, `gb_memset`, `gb_bzero`)**
 These functions are advantageous when:
 - **Microcontrollers without SIMD** - Standard libraries can't use vectorized instructions
 - **Real-time constraints** - Consistent execution time without CPU feature detection
