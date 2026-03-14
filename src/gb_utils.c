@@ -21,6 +21,12 @@
 #include <stdio.h>  // size_t, snprintf
 #include <stdlib.h> // NULL, malloc, strtoul
 
+// *****************************************************************************
+// *****************************************************************************
+// Local Macros
+// *****************************************************************************
+// *****************************************************************************
+
 // Compile-time checks for portability
 #if !defined(UINT32_MAX) || (UINT32_MAX != 0xFFFFFFFFU)
 #error "This code requires a proper 32-bit unsigned integer type"
@@ -559,7 +565,90 @@ static bool _unsafe_dec2bin(const size_t num,     //
 // *****************************************************************************
 // *****************************************************************************
 
-// --- Memory — raw ---------------------------------------------------------
+// --- Memory — allocation -----------------------------------------------------
+
+/**
+ * @brief Allocates an aligned block of memory.
+ *
+ * Allocates `size` bytes of memory whose start address is a multiple of
+ * `align`. The alignment must be a non-zero power of two and at most 128;
+ * if it is smaller than `sizeof(void *)` it is silently raised to that
+ * minimum so the returned pointer is always safely pointer-aligned.
+ *
+ * Implementation: a single `malloc` call allocates `size + align` bytes
+ * (the extra `align` bytes provide the worst-case padding budget). The
+ * payload is then bumped forward to the next `align`-boundary, and the
+ * byte immediately before the payload records the total back-offset from
+ * the payload to the raw block (range 1–128, fits in uint8_t with no
+ * wrapping). `gb_free` reads that byte and subtracts it to recover the
+ * original pointer before calling `free`.
+ *
+ * @param[in] size  Number of bytes to allocate.
+ * @param[in] align Alignment in bytes (must be a power of two, ≤ 128).
+ *
+ * @return Pointer to the aligned memory block, or NULL on failure (invalid
+ * alignment, zero size, or allocation failure).
+ */
+void *gb_malloc(size_t size, //
+                size_t align) {
+    if (!size || !GB_IS_POWER_OF_2(align) || align > 128) {
+        return NULL;
+    }
+    if (align < sizeof(void *)) {
+        align = sizeof(void *);
+    }
+
+    // Overflow guard: size + align + 1 must not wrap around.
+    // align ≤ 128 so align + 1 ≤ 129; check size separately.
+    if (size > SIZE_MAX - align - 1U) {
+        return NULL;
+    }
+
+    // Allocate raw block: payload size + one full align worth of padding
+    // budget + 1 byte reserved for the back-offset field
+    uint8_t *raw = (uint8_t *)malloc(size + align + 1U);
+    if (!raw) {
+        return NULL;
+    }
+
+    // Reserve 1 byte before the payload for the back-offset field, then
+    // advance to the next align-boundary
+    uint8_t  *base = raw + 1U;
+    uintptr_t mod  = (uintptr_t)base & (align - 1U);
+    size_t    pad  = (mod == 0U) ? 0U : (align - (size_t)mod);
+    uint8_t  *ptr  = base + pad;
+
+    // back_offset = ptr − raw ∈ [1, align] ⊆ [1, 128] — fits in uint8_t
+    uint8_t back_offset = (uint8_t)(ptr - raw);
+    ptr[-1]             = back_offset;
+
+    return (void *)ptr;
+}
+
+/**
+ * @brief Frees a block allocated by gb_malloc.
+ *
+ * Reads the back-offset byte stored immediately before `ptr` to recover the
+ * original raw pointer passed to `malloc`, then calls `free` on it.
+ *
+ * @warning Passing a pointer not obtained from `gb_malloc` (including
+ * pointers from plain `malloc`, `calloc`, or `realloc`) is undefined
+ * behavior and will corrupt the heap.
+ *
+ * @param[in] ptr Pointer previously returned by gb_malloc, or NULL (no-op).
+ */
+void gb_free(void *ptr) {
+    if (!ptr) {
+        return;
+    }
+
+    uint8_t *p   = (uint8_t *)ptr;
+    uint8_t *raw = p - p[-1]; // recover raw = ptr − back_offset
+
+    free(raw);
+}
+
+// --- Memory — raw ------------------------------------------------------------
 
 /**
  * @brief Copies a block of memory from source to destination.
@@ -905,90 +994,7 @@ void *gb_memrchr(const void *buf, //
     return NULL;
 }
 
-// --- Memory — allocation --------------------------------------------------
-
-/**
- * @brief Allocates an aligned block of memory.
- *
- * Allocates `size` bytes of memory whose start address is a multiple of
- * `align`. The alignment must be a non-zero power of two and at most 128;
- * if it is smaller than `sizeof(void *)` it is silently raised to that
- * minimum so the returned pointer is always safely pointer-aligned.
- *
- * Implementation: a single `malloc` call allocates `size + align` bytes
- * (the extra `align` bytes provide the worst-case padding budget). The
- * payload is then bumped forward to the next `align`-boundary, and the
- * byte immediately before the payload records the total back-offset from
- * the payload to the raw block (range 1–128, fits in uint8_t with no
- * wrapping). `gb_free` reads that byte and subtracts it to recover the
- * original pointer before calling `free`.
- *
- * @param[in] size  Number of bytes to allocate.
- * @param[in] align Alignment in bytes (must be a power of two, ≤ 128).
- *
- * @return Pointer to the aligned memory block, or NULL on failure (invalid
- * alignment, zero size, or allocation failure).
- */
-void *gb_malloc(size_t size, //
-                size_t align) {
-    if (!size || !GB_IS_POWER_OF_2(align) || align > 128) {
-        return NULL;
-    }
-    if (align < sizeof(void *)) {
-        align = sizeof(void *);
-    }
-
-    // Overflow guard: size + align + 1 must not wrap around.
-    // align ≤ 128 so align + 1 ≤ 129; check size separately.
-    if (size > SIZE_MAX - align - 1U) {
-        return NULL;
-    }
-
-    // Allocate raw block: payload size + one full align worth of padding
-    // budget + 1 byte reserved for the back-offset field
-    uint8_t *raw = (uint8_t *)malloc(size + align + 1U);
-    if (!raw) {
-        return NULL;
-    }
-
-    // Reserve 1 byte before the payload for the back-offset field, then
-    // advance to the next align-boundary
-    uint8_t  *base = raw + 1U;
-    uintptr_t mod  = (uintptr_t)base & (align - 1U);
-    size_t    pad  = (mod == 0U) ? 0U : (align - (size_t)mod);
-    uint8_t  *ptr  = base + pad;
-
-    // back_offset = ptr − raw ∈ [1, align] ⊆ [1, 128] — fits in uint8_t
-    uint8_t back_offset = (uint8_t)(ptr - raw);
-    ptr[-1]             = back_offset;
-
-    return (void *)ptr;
-}
-
-/**
- * @brief Frees a block allocated by gb_malloc.
- *
- * Reads the back-offset byte stored immediately before `ptr` to recover the
- * original raw pointer passed to `malloc`, then calls `free` on it.
- *
- * @warning Passing a pointer not obtained from `gb_malloc` (including
- * pointers from plain `malloc`, `calloc`, or `realloc`) is undefined
- * behavior and will corrupt the heap.
- *
- * @param[in] ptr Pointer previously returned by gb_malloc, or NULL (no-op).
- */
-void gb_free(void *ptr) {
-    if (!ptr) {
-        return;
-    }
-
-    uint8_t *p   = (uint8_t *)ptr;
-    uint8_t *raw = p - p[-1]; // recover raw = ptr − back_offset
-
-    free(raw);
-}
-
-// --- String — length ------------------------------------------------------
+// --- String — length ---------------------------------------------------------
 
 /**
  * @brief Calculates the length of a string.
@@ -1101,7 +1107,7 @@ size_t gb_strnlen(const char *str, //
     return maxlen;
 }
 
-// --- String — copy / concat -----------------------------------------------
+// --- String — copy / concat --------------------------------------------------
 
 /**
  * @brief Copies a string from source to destination.
@@ -1347,7 +1353,7 @@ char *gb_strdup(const char *str) {
     return dup;
 }
 
-// --- String — search ------------------------------------------------------
+// --- String — search ---------------------------------------------------------
 
 /**
  * @brief Finds the first occurrence of a character in a string.
@@ -1654,7 +1660,7 @@ char *gb_strtok_r(char *restrict str,         //
     return token_start;
 }
 
-// --- String — compare -----------------------------------------------------
+// --- String — compare --------------------------------------------------------
 
 /**
  * @brief Compares two strings lexicographically.
@@ -1747,7 +1753,7 @@ int gb_strncmp(const char *str1, //
     return _strcmp_tail_phase((const char *)wp1, (const char *)wp2, n);
 }
 
-// --- Conversion -----------------------------------------------------------
+// --- Conversion --------------------------------------------------------------
 
 /**
  * @brief Converts a binary string to a decimal string.

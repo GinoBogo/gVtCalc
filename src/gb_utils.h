@@ -48,6 +48,18 @@
 
 #undef SHIFT_U8
 
+// DIGIT macros
+#define _0 0
+#define _1 1
+#define _2 2
+#define _3 3
+#define _4 4
+#define _5 5
+#define _6 6
+#define _7 7
+#define _8 8
+#define _9 9
+
 // NIBBLE macros
 #define N_0000 0
 #define N_0001 1
@@ -569,7 +581,40 @@ typedef uint64_t gb_word_t;
 // *****************************************************************************
 // *****************************************************************************
 
-// --- Memory — raw ---------------------------------------------------------
+// --- Memory — allocation -----------------------------------------------------
+
+/**
+ * @brief Allocates an aligned block of memory.
+ *
+ * Allocates `size` bytes with a start address that is a multiple of `align`.
+ * The alignment must be a non-zero power of two and at most 128; values
+ * smaller than `sizeof(void *)` are silently raised to that minimum.
+ *
+ * The 128-byte cap exists because the back-offset between the returned
+ * pointer and the raw `malloc` block is stored in a single `uint8_t`
+ * immediately before the payload. With align ≤ 128 the offset fits in
+ * [1, 128] with no wrapping; align = 256 would produce offset = 256,
+ * which wraps to 0 in a `uint8_t` and corrupts the heap in `gb_free`.
+ *
+ * @param[in] size  Number of bytes to allocate.
+ * @param[in] align Alignment in bytes (must be a power of two, ≤ 128).
+ *
+ * @return Pointer to the aligned memory block, or NULL on failure.
+ */
+void *gb_malloc(size_t size, //
+                size_t align);
+
+/**
+ * @brief Frees a block allocated by gb_malloc.
+ *
+ * @warning Passing a pointer not obtained from `gb_malloc` is undefined
+ * behavior and will corrupt the heap. NULL is silently ignored.
+ *
+ * @param[in] ptr Pointer previously returned by gb_malloc, or NULL (no-op).
+ */
+void gb_free(void *ptr);
+
+// --- Memory — raw ------------------------------------------------------------
 
 /**
  * @brief Copies a block of memory from source to destination.
@@ -668,40 +713,7 @@ void *gb_memrchr(const void *buf, //
                  int         c,   //
                  size_t      len);
 
-// --- Memory — allocation --------------------------------------------------
-
-/**
- * @brief Allocates an aligned block of memory.
- *
- * Allocates `size` bytes with a start address that is a multiple of `align`.
- * The alignment must be a non-zero power of two and at most 128; values
- * smaller than `sizeof(void *)` are silently raised to that minimum.
- *
- * The 128-byte cap exists because the back-offset between the returned
- * pointer and the raw `malloc` block is stored in a single `uint8_t`
- * immediately before the payload. With align ≤ 128 the offset fits in
- * [1, 128] with no wrapping; align = 256 would produce offset = 256,
- * which wraps to 0 in a `uint8_t` and corrupts the heap in `gb_free`.
- *
- * @param[in] size  Number of bytes to allocate.
- * @param[in] align Alignment in bytes (must be a power of two, ≤ 128).
- *
- * @return Pointer to the aligned memory block, or NULL on failure.
- */
-void *gb_malloc(size_t size, //
-                size_t align);
-
-/**
- * @brief Frees a block allocated by gb_malloc.
- *
- * @warning Passing a pointer not obtained from `gb_malloc` is undefined
- * behavior and will corrupt the heap. NULL is silently ignored.
- *
- * @param[in] ptr Pointer previously returned by gb_malloc, or NULL (no-op).
- */
-void gb_free(void *ptr);
-
-// --- String — length ------------------------------------------------------
+// --- String — length ---------------------------------------------------------
 
 /**
  * @brief Calculates the length of a string.
@@ -729,7 +741,7 @@ size_t gb_strlen(const char *str);
 size_t gb_strnlen(const char *str, //
                   size_t      maxlen);
 
-// --- String — copy / concat -----------------------------------------------
+// --- String — copy / concat --------------------------------------------------
 
 /**
  * @brief Copies a string from source to destination.
@@ -822,7 +834,7 @@ size_t gb_strlcat(char *restrict dst,       //
  */
 char *gb_strdup(const char *str);
 
-// --- String — search ------------------------------------------------------
+// --- String — search ---------------------------------------------------------
 
 /**
  * @brief Finds the first occurrence of a character in a string.
@@ -909,7 +921,7 @@ char *gb_strtok_r(char *restrict str,         //
                   const char *restrict delim, //
                   char **restrict saveptr);
 
-// --- String — compare -----------------------------------------------------
+// --- String — compare --------------------------------------------------------
 
 /**
  * @brief Compares two strings lexicographically.
@@ -943,7 +955,7 @@ int gb_strncmp(const char *str1, //
                const char *str2, //
                size_t      n);
 
-// --- Conversion -----------------------------------------------------------
+// --- Conversion --------------------------------------------------------------
 
 /**
  * @brief Converts a binary string to a decimal string.
